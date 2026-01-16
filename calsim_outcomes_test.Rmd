@@ -1,0 +1,211 @@
+
+function
+
+imports: 
+  - demand csv
+  - deliveries csv
+  - scenario name
+
+outputs:
+  - 2 csvs with 1) deliveries and 2) deliveries as % of demand, at the demand unit level
+    - 1st by month
+    - 2nd aggregated by year 
+  - csv of tiers, at the demand unit level
+  - list of any demand units with no data for 1) demand data, and/or 2) delivery data
+  
+    
+Notes:
+- make sure aggregations by year matches with annual delivery/demand data provided (separate csv)
+- need to crosswalk demands and deliveries back to demand unit ID using crosswalk sheet
+
+Refer to [project overview](https://docs.google.com/document/d/1QPh7cKy7fmokalWuou5Z_zqG6680rybq8CC6gmiC8RE/edit?tab=t.0) document for guidance
+
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+  library(tidyverse)   # Data wrangling
+  library(here)        # File management
+  library(readxl)      # Read excel files
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+
+sec_per_min = 60
+min_per_hr = 60
+hr_per_day = 24
+day_per_month = 30
+cubic_ft_per_acre_ft = 43559.9
+
+options(scipen = 999)
+```
+
+# Import and process data
+
+## Crosswalk
+Crosswalk between demand units' demand ID and delivery ID
+Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BYFQlIA0JJ31sAHDt7yMovLWWZvwoMeO)
+```{r}
+crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
+  rename(dwuc = 1, demand_id = 2, delivery_id = 3)
+```
+
+Demand and delivery data downloaded from the respective Google Drive folder linked to each scenario in [this spreadsheet](https://docs.google.com/spreadsheets/d/1iXqEc4sMVC8gKqPzhf_VOS32EXKzocAP2pNJ5PZlFbY/edit?gid=0#gid=0). Once in a scenario's folder, click on 'Data Extraction', then 'Demands_Deliveries'. We want to download csvs of monthly values for both demand and deliveries.
+
+
+## Monthly demand data
+
+Need to standardise units and join to crosswalk to get demand unit ID
+```{r}
+demands = read.csv("Inputs/Demands/s0045_DCRadjBL_2020LU_RelaxFallX2_DEMANDS.csv", skip = 1)%>%
+  slice(-(1:4))%>%
+  rename(date = 1)%>%
+  pivot_longer(cols = -1, names_to = "demand_id", values_to = "demand")%>%
+  filter(demand_id %in% crosswalk$demand_id)
+
+units = demands%>%
+  filter(date == "Units")%>%
+  select(-date)%>%
+  rename(units = demand)
+
+demands = demands%>%
+  filter(date != "Units")%>%
+  mutate(date = as.Date(date),
+         year = year(date),
+         demand = as.numeric(demand))
+
+demand_processed = full_join(demands, units, by = "demand_id")%>%
+  mutate(demand_taf = case_when(
+    units == "TAF" ~ demand,
+    units == "CFS" ~ demand / cubic_ft_per_acre_ft * sec_per_min * min_per_hr * hr_per_day * day_per_month))%>%
+  select(demand_id, date, demand_taf)%>%
+  left_join(., crosswalk%>%select(-delivery_id), by = "demand_id")
+```
+
+## Deliveries
+
+Need to standardise units and join to crosswalk to get demand unit ID
+```{r}
+deliveries = read.csv("Inputs/Deliveries/s0045_DCRadjBL_2020LU_RelaxFallX2_DELIVERIES.csv", skip = 1)%>%
+  slice(-(1:4))%>%
+  rename(date = 1)%>%
+  pivot_longer(cols = -1, names_to = "delivery_id", values_to = "delivery")%>%
+  filter(delivery_id %in% crosswalk$delivery_id)
+
+units = deliveries%>%
+  filter(date == "Units")%>%
+  select(-date)%>%
+  rename(units = delivery)
+
+deliveries = deliveries%>%
+  filter(date != "Units")%>%
+  mutate(date = as.Date(date),
+         delivery = as.numeric(delivery))
+
+delivery_processed = full_join(deliveries, units, by = "delivery_id")%>%
+  mutate(delivery_taf = case_when(
+    units == "TAF" ~ delivery,
+    units == "CFS" ~ delivery / cubic_ft_per_acre_ft * sec_per_min * min_per_hr * hr_per_day * day_per_month))%>%
+  select(delivery_id, date, delivery_taf)%>%
+  left_join(., crosswalk%>%select(-demand_id), by = "delivery_id")
+```
+
+```{r}
+combined = full_join(delivery_processed, demand_processed, by = c("dwuc", "date"))%>%
+  mutate(percent_demand_met = ifelse(delivery_taf >= demand_taf, 100, delivery_taf / demand_taf * 100),
+         year = year(date))%>%
+  select(dwuc, date, year, delivery_id, delivery_taf, demand_id, demand_taf)
+```
+
+# Analysis
+
+## Missingness
+
+Create list of demand units that are entirely missing either delivery or demand values.
+```{r}
+missing = crosswalk%>%
+  mutate(demand_missing = ifelse(!demand_id %in% demand_processed$demand_id, 1, 0),
+         delivery_missing = ifelse(!delivery_id %in% delivery_processed$delivery_id, 1, 0))%>%
+  filter(delivery_missing == 1 | demand_missing == 1)
+```
+
+Investigate month to month missingness for demand & delivery values
+```{r}
+combined%>%
+  mutate(delivery_id_missing = ifelse(is.na(delivery_id), 1, 0),
+         delivery_taf_missing = ifelse(is.na(delivery_taf), 1, 0),
+         demand_id_missing = ifelse(is.na(demand_id), 1, 0),
+         demand_taf_missing = ifelse(is.na(demand_id), 1, 0))%>%
+  group_by(dwuc, year)%>%
+  reframe(delivery_id_missing = sum(delivery_id_missing),
+          delivery_taf_missing = sum(delivery_taf_missing),
+          demand_id_missing = sum(demand_id_missing),
+          demand_taf_missing = sum(demand_taf_missing))%>%
+  filter(delivery_taf_missing > 0 | demand_taf_missing > 0)
+
+combined%>%
+  filter(!dwuc %in% missing$dwuc)%>%
+  mutate(missing = ifelse(is.na(delivery_taf) | is.na(demand_taf), 1, 0))%>%
+  group_by(year, dwuc)%>%
+  reframe(annual_delivery = sum(delivery_taf),
+          annual_demand = sum(demand_taf),
+          n_missing_months = sum(missing))%>%
+  ungroup()%>%
+  mutate(totally_missing = ifelse(n_missing_months == 12, 1, 0),
+         partially_missing = ifelse(n_missing_months > 0, 1, 0))%>%
+  group_by(dwuc)%>%
+  reframe(years_totally_missing = sum(totally_missing),
+          years_partially_missing = sum(partially_missing))%>%
+  arrange(-years_totally_missing, -years_partially_missing)
+```
+
+Exclude any demand units that are entirely missing demand or delivery values. That way, we avoid scenarios where demand has a value and delivery is missing, which could incorrectly throw a 0% met when that's not necessarily true. 
+Similarly, exclude any months for demand units where either demand or delivery is NA.
+```{r}
+combined = combined%>%
+  filter(!dwuc %in% missing$dwuc)%>%
+  mutate(missing = ifelse(is.na(delivery_taf) | is.na(demand_taf), 1, 0))%>%
+  filter(missing == 0)
+```
+
+
+## Percent demand met and tiers
+
+Aggregate delivery and demand by year, then calculate % of demand met by year. 
+
+Based on that, calculate % of years where demand is fully met and the minimum % of demand met in deficit years.
+From there, we can assign tiers according to the criteria we've listed in [this spreadsheet](https://docs.google.com/spreadsheets/d/1xcQIR_J96-cs7BuCrXjznwkinLgxl-Pf9tA3mJ2GiyA/edit?gid=916228682#gid=916228682)
+```{r}
+combined_by_year = combined%>%
+  group_by(year, dwuc)%>%
+  reframe(annual_delivery = sum(delivery_taf),
+          annual_demand = sum(demand_taf))%>%
+  ungroup()%>%
+  mutate(percent_demand_met = ifelse(annual_delivery >= annual_demand, 100, annual_delivery / annual_demand * 100))
+
+write.csv(combined_by_year, "Outputs/insert scenario id here_demand_met_by_year.csv", row.names = F)
+
+tiers = combined_by_year%>%
+  mutate(demand_met = ifelse(percent_demand_met >= 100, 1, 0))%>%
+  group_by(dwuc)%>%
+  reframe(perc_years_met = sum(demand_met)/n()*100,
+          min_met = min(percent_demand_met))%>%
+  ungroup()%>%
+    mutate(tier = case_when(
+    perc_years_met >= 90 & min_met > 75 ~ 1,
+    perc_years_met >= 70 & min_met > 75 ~ 2,
+    perc_years_met >= 50 & min_met > 50 ~ 3,
+    T ~ 4))
+
+# rather than separate csv of tiers for each scenario, combine all scenarios so that we have one row per scenario and one column per demand unit (dwuc). and then the value in the corresponding cell is the tier (1, 2, 3, 4)
+```
+
+
+
+
