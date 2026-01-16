@@ -1,0 +1,253 @@
+
+Refer to [project overview](https://docs.google.com/document/d/1QPh7cKy7fmokalWuou5Z_zqG6680rybq8CC6gmiC8RE/edit?tab=t.0) document for guidance
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+  library(tidyverse)   # Data wrangling
+  library(here)        # File management
+  library(readxl)      # Read excel files
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+
+sec_per_min = 60
+min_per_hr = 60
+hr_per_day = 24
+day_per_month = 30
+cubic_ft_per_acre_ft = 43559.9
+
+options(scipen = 999)
+```
+
+# Crosswalk data
+Crosswalk between demand units' demand ID and delivery ID
+Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BYFQlIA0JJ31sAHDt7yMovLWWZvwoMeO)
+```{r}
+crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
+  rename(dwuc = 1, demand_id = 2, delivery_id = 3)
+```
+
+# Demand and delivery data
+
+Demand and delivery data downloaded from the respective Google Drive folder linked to each scenario in [this spreadsheet](https://docs.google.com/spreadsheets/d/1iXqEc4sMVC8gKqPzhf_VOS32EXKzocAP2pNJ5PZlFbY/edit?gid=0#gid=0). Once in a scenario's folder, click on 'Data Extraction', then 'Demands_Deliveries'. We want to download csvs of monthly values for both demand and deliveries.
+
+Function to extract scenario ID from filename
+```{r}
+extract_scenario_id = function(filename) {
+  str_extract(filename, "s\\d+") %>% tolower()}
+```
+
+Core function to process either a demand or delivery file. 
+
+Cleans up header rows, extracts units for demand or delivery values, and converts everything to thousand acre feet.
+Returns a processed dataset of either demand or delivery values by demand unit and month
+```{r}
+process_file = function(file_path, crosswalk, data_type = c("demand", "delivery")) {
+  data_type = match.arg(data_type)
+  scenario_id = extract_scenario_id(basename(file_path))
+  
+  # Read and clean the data
+  data = read.csv(file_path, skip = 1) %>%
+    slice(-(1:4)) %>%
+    rename(date = 1) %>%
+    pivot_longer(cols = -1, names_to = "id", values_to = "value")
+  
+  # Filter for only demand units whose demand ID or delivery ID is in our crosswalk dataset
+  id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
+  data = data %>%
+    filter(id %in% crosswalk[[id_col]])
+  
+  # Extract units for demand or delivery values
+  units = data %>%
+    filter(date == "Units") %>%
+    select(-date) %>%
+    rename(units = value)
+  
+  # Process main data
+  data = data %>%
+    filter(date != "Units") %>%
+    mutate(
+      date = as.Date(date),
+      value = as.numeric(value))
+  
+  # Join with units and convert to TAF
+  processed = full_join(data, units, by = "id") %>%
+    mutate(
+      value_taf = case_when(
+        units == "TAF" ~ value,
+        units == "CFS" ~ value / cubic_ft_per_acre_ft * sec_per_min * min_per_hr * hr_per_day * day_per_month),
+      scenario_id = scenario_id)
+  
+  # Rename columns based on data type and return processed dataset
+  if (data_type == "demand") {
+    processed = processed %>%
+      rename(demand_id = id, demand_taf = value_taf) %>%
+      select(scenario_id, demand_id, date, demand_taf) %>%
+      left_join(crosswalk %>% select(-delivery_id), by = "demand_id")} 
+  else {
+    processed = processed %>%
+      rename(delivery_id = id, delivery_taf = value_taf) %>%
+      select(scenario_id, delivery_id, date, delivery_taf) %>%
+      left_join(crosswalk %>% select(-demand_id), by = "delivery_id")}
+  return(processed)}
+```
+
+Main function to process a complete scenario (demand + delivery pair).:
+- Goes through the demand and delivery folders to identify scenarios, and if both files found for a given scenario, 
+    calls the function above to process both the demand and delivery data. 
+- Creates a dataset of missing demand units for that scenario and writes to a csv for each scenario.
+- Joins demand and delivery data by demand unit ID and filters out rows with any missing values. Calculates monthly %
+    of demand met and writes to a csv
+- Aggregates demand and delivery by year for each demand unit and calculates annual % of demand met. Saves this to a csv for each scenario as
+    well
+- Calculates tiers based on annual % of demand met
+```{r}
+process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswalk, output_base = "Outputs") {
+  cat("Processing scenario:", scenario_id, "\n")
+  
+  # Find files for this scenario
+  demand_files = list.files(demand_folder, pattern = paste0(scenario_id, ".*\\.csv$"), full.names = TRUE)
+  delivery_files = list.files(delivery_folder, pattern = paste0(scenario_id, ".*\\.csv$"), full.names = TRUE)
+  
+  if (length(demand_files) == 0 || length(delivery_files) == 0) {
+    warning(paste("Missing files for scenario:", scenario_id))
+    return(NULL)}
+  
+  # Process both files
+  demand_data = process_file(demand_files[1], crosswalk, "demand")
+  delivery_data = process_file(delivery_files[1], crosswalk, "delivery")
+  
+  # Create list of missing units
+  missing = crosswalk %>%
+    mutate(
+      demand_missing = ifelse(!demand_id %in% demand_data$demand_id, 1, 0),
+      delivery_missing = ifelse(!delivery_id %in% delivery_data$delivery_id, 1, 0)) %>%
+    filter(delivery_missing == 1 | demand_missing == 1)
+  
+  # Save missing units (optional)
+  if (nrow(missing) > 0 && !is.null(output_base)) {
+    missing_dir = file.path(output_base, "Missing demand units")
+    dir.create(missing_dir, showWarnings = FALSE, recursive = TRUE)
+    write.csv(missing, file.path(missing_dir, paste0(scenario_id, "_missing_dus.csv")), row.names = FALSE)}
+  
+  # Combine and filter data
+  combined_monthly = full_join(delivery_data, demand_data, by = c("dwuc", "date", "scenario_id"))%>%
+    filter(!dwuc %in% missing$dwuc) %>%
+    filter(!is.na(delivery_taf) & !is.na(demand_taf)) %>%
+    mutate(
+      percent_demand_met = ifelse(delivery_taf >= demand_taf, 100, delivery_taf / demand_taf * 100),
+      year = year(date)) %>%
+    select(scenario_id, dwuc, date, year, delivery_id, delivery_taf, demand_id, demand_taf, percent_demand_met)
+  
+  # Save monthly data
+  if (!is.null(output_base)) {
+    monthly_dir = file.path(output_base, "Monthly demand met")
+    dir.create(monthly_dir, showWarnings = FALSE, recursive = TRUE)
+    write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)}
+  
+  
+  # Calculate annual aggregates
+  combined_by_year = combined_monthly %>%
+    group_by(scenario_id, year, dwuc) %>%
+    reframe(
+      annual_delivery = sum(delivery_taf),
+      annual_demand = sum(demand_taf)) %>%
+    ungroup() %>%
+    mutate(
+      percent_demand_met = ifelse(annual_delivery >= annual_demand, 100, annual_delivery / annual_demand * 100))
+  
+  # Save annual data 
+  if (!is.null(output_base)) {
+    annual_dir = file.path(output_base, "Annual demand met")
+    dir.create(annual_dir, showWarnings = FALSE, recursive = TRUE)
+    write.csv(combined_by_year, file.path(annual_dir, paste0(scenario_id, "_demand_met_by_year.csv")), row.names = FALSE)}
+  
+  # Calculate tiers
+  tiers = combined_by_year %>%
+    mutate(demand_met = ifelse(percent_demand_met >= 100, 1, 0)) %>%
+    group_by(scenario_id, dwuc) %>%
+    reframe(
+      perc_years_met = sum(demand_met) / n() * 100,
+      min_met = min(percent_demand_met)) %>%
+    ungroup() %>%
+    mutate(
+      tier = case_when(
+        perc_years_met >= 90 & min_met > 75 ~ 1,
+        perc_years_met >= 70 & min_met > 75 ~ 2,
+        perc_years_met >= 50 & min_met > 50 ~ 3,
+        T ~ 4)) %>%
+    select(scenario_id, dwuc, tier)
+  
+  return(tiers)}
+```
+
+
+```{r}
+# Process ALL scenarios and create tier matrix
+process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, output_base = "Outputs") {
+  
+  # Get scenario IDs
+  demand_files = list.files(demand_folder, pattern = "\\.csv$")
+  delivery_files = list.files(delivery_folder, pattern = "\\.csv$")
+  
+  demand_scenarios = sapply(demand_files, extract_scenario_id)
+  delivery_scenarios = sapply(delivery_files, extract_scenario_id)
+  common_scenarios = intersect(demand_scenarios, delivery_scenarios)
+  
+  cat("Found", length(common_scenarios), "scenarios to process\n\n")
+  
+  # Process each scenario and collect tier dfs
+  all_tiers = map_df(common_scenarios, function(scenario_id) {
+    process_scenario(scenario_id, demand_folder, delivery_folder, crosswalk)})
+  
+  # Convert to matrix format
+  tier_matrix = all_tiers %>%
+    pivot_wider(
+      names_from = dwuc,
+      values_from = tier,
+      names_sort = T)%>%
+    arrange(scenario_id)
+  
+  # Save tier outputs
+  if (!is.null(output_base)) {
+    tier_dir = file.path(output_base, "Tier summaries")
+    dir.create(tier_dir, showWarnings = F, recursive = T)
+    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix.csv"), row.names = F)}}
+```
+
+
+```{r}
+results = process_all_scenarios(
+  demand_folder = "Inputs/Demands",
+  delivery_folder = "Inputs/Deliveries",
+  crosswalk = crosswalk,
+  output_base = "Outputs")  # Set to NULL if you don't want intermediate files saved
+```
+
+
+```{r}
+read.csv("Outputs/Missing demand units/s0010_missing_dus.csv")
+read.csv("Outputs/Missing demand units/s0045_missing_dus.csv")
+
+read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")
+
+read.csv("Outputs/Annual demand met/s0010_demand_met_by_year.csv")
+read.csv("Outputs/Annual demand met/s0045_demand_met_by_year.csv")
+
+read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")
+```
+
+
+
+
+
+
+
+
