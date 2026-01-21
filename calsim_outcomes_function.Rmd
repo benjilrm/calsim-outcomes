@@ -54,46 +54,50 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
   scenario_id = extract_scenario_id(basename(file_path))
   
   # Read and clean the data
-  data = read.csv(file_path, skip = 1) %>%
-    slice(-(1:4)) %>%
-    rename(date = 1) %>%
-    pivot_longer(cols = -1, names_to = "id", values_to = "value")
+  data = read.csv(file_path) %>%
+    mutate(row_id = row_number())%>%
+    pivot_longer(cols = -row_id,
+                 names_to = "col_position",
+                 values_to = "value")%>%
+    pivot_wider(
+      names_from = row_id,
+      values_from = value)%>%
+    rename(
+      col_position = 1,
+      demand_unit_id = 2,    
+      units = 7)
+  
+  dates = data %>%
+  slice(1) %>%  # Get the row with dates
+  select(8:ncol(.)) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "date_id",
+    values_to = "date")
   
   # Filter for only demand units whose demand ID or delivery ID is in our crosswalk dataset
   id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
-  data = data %>%
-    filter(id %in% crosswalk[[id_col]])
-  
-  # Extract units for demand or delivery values
-  units = data %>%
-    filter(date == "Units") %>%
-    select(-date) %>%
-    rename(units = value)
-  
-  # Process main data
-  data = data %>%
-    filter(date != "Units") %>%
-    mutate(
-      date = as.Date(date),
-      value = as.numeric(value))
-  
-  # Join with units and convert to TAF
-  processed = full_join(data, units, by = "id") %>%
-    mutate(
-      value_taf = case_when(
-        units == "TAF" ~ value,
-        units == "CFS" ~ value / cubic_ft_per_acre_ft * sec_per_min * min_per_hr * hr_per_day * day_per_month),
-      scenario_id = scenario_id)
+  processed = data%>%
+    filter(units == "TAF" & demand_unit_id %in% crosswalk[[id_col]])%>%
+    select(-c(1,3:units))%>%
+    pivot_longer(
+      cols = -demand_unit_id,
+      names_to = "date_id",
+      values_to = "value_taf")%>%
+    left_join(., dates, by = "date_id")%>%
+    select(-date_id)%>%
+    mutate(scenario_id = scenario_id,
+           value_taf = as.numeric(ifelse(value_taf == "", 0, value_taf)))
   
   # Rename columns based on data type and return processed dataset
   if (data_type == "demand") {
     processed = processed %>%
-      rename(demand_id = id, demand_taf = value_taf) %>%
+      rename(demand_id = demand_unit_id, demand_taf = value_taf) %>%
       select(scenario_id, demand_id, date, demand_taf) %>%
       left_join(crosswalk %>% select(-delivery_id), by = "demand_id")} 
   else {
     processed = processed %>%
-      rename(delivery_id = id, delivery_taf = value_taf) %>%
+      rename(delivery_id = demand_unit_id, delivery_taf = value_taf) %>%
       select(scenario_id, delivery_id, date, delivery_taf) %>%
       left_join(crosswalk %>% select(-demand_id), by = "delivery_id")}
   return(processed)}
@@ -236,7 +240,8 @@ results = process_all_scenarios(
 read.csv("Outputs/Missing demand units/s0010_missing_dus.csv")
 read.csv("Outputs/Missing demand units/s0045_missing_dus.csv")
 
-read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")
+read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")%>%
+  filter(dwuc == "CSB103")
 
 read.csv("Outputs/Annual demand met/s0010_demand_met_by_year.csv")
 read.csv("Outputs/Annual demand met/s0045_demand_met_by_year.csv")
