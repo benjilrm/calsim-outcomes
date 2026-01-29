@@ -1,0 +1,133 @@
+
+Refer to [project overview](https://docs.google.com/document/d/1QPh7cKy7fmokalWuou5Z_zqG6680rybq8CC6gmiC8RE/edit?tab=t.0) document for guidance
+
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+  library(tidyverse)   # Data wrangling
+  library(here)        # File management
+  library(readxl)      # Read excel files
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+options(scipen = 999)
+```
+
+
+# Import data
+
+```{r}
+folder_path <- "Outputs/Annual demand met/"  
+csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = T)
+
+combined_df <- do.call(rbind, lapply(csv_files, read_csv))
+
+combined_df%>%
+  filter(scenario_id == "s0010" & dwuc == "02_SU")
+```
+
+
+```{r}
+combined_df%>%
+  ggplot(aes(percent_demand_met, fill = scenario_id))+
+  geom_density(alpha = 0.1, position = "identity") +
+  labs(x = "% Annual Demand Met", y = "Density")
+
+combined_df%>%
+  filter(scenario_id == "s0045")%>%
+  ggplot(aes(percent_demand_met))+
+  geom_histogram(aes(y = ..count../sum(..count..)*100), fill = "coral1", colour = "black")+
+  labs(x = "% Annual Demand Met, scenario S0045", y = "% of Values (across all demand units and years)")
+
+
+library(ggridges)
+
+ggplot(combined_df, aes(x = percent_demand_met, y = scenario_id, fill = scenario_id)) +
+  geom_density_ridges(
+    aes(height = after_stat(density)),
+    stat = "density",
+    scale = 0.9,
+    alpha = 0.7) +
+  scale_x_continuous(expand = expansion(mult = c(0.01, 0.01))) +
+  theme_ridges() +
+  labs(x = "Value", y = "Scenario")
+```
+```{r}
+grouped = combined_df %>%
+  group_by(scenario_id, dwuc) %>%
+  summarise(
+    n_years = n(),
+    pct_met_100 = mean(percent_demand_met >= 100, na.rm = TRUE) * 100,
+    pct_met_90 = mean(percent_demand_met >= 90, na.rm = TRUE) * 100,
+    pct_met_75 = mean(percent_demand_met >= 75, na.rm = TRUE) * 100,
+    pct_met_50 = mean(percent_demand_met >= 50, na.rm = TRUE) * 100,
+    mean_demand_met = mean(percent_demand_met, na.rm = TRUE),
+    median_demand_met = median(percent_demand_met, na.rm = TRUE),
+    min_demand_met = min(percent_demand_met, na.rm = TRUE),
+    max_demand_met = max(percent_demand_met, na.rm = TRUE),
+    .groups = 'drop')
+
+ggplot(grouped, aes(x = pct_met_100)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", alpha = 0.7)+ 
+  geom_vline(xintercept = c(50, 70, 90), linetype = "dashed", size = 1) +
+  facet_wrap(~scenario_id, ncol = 4) +
+  labs(title = "Distribution of % Years with Full Demand Met by Scenario",
+       x = "% Years with 100%+ Demand Met",
+       y = "Count of Demand Units") +
+  theme_bw()
+```
+```{r}
+# First, calculate annual deficit severity for deficit years
+deficit_summary <- combined_df %>%
+  filter(percent_demand_met < 100) %>%
+  group_by(scenario_id, dwuc) %>%
+  summarise(
+    worst_deficit = min(percent_demand_met),
+    avg_deficit = mean(percent_demand_met),
+    pct_below_75 = mean(percent_demand_met < 75) * 100,
+    pct_below_50 = mean(percent_demand_met < 50) * 100,
+    .groups = 'drop')
+
+# Combine with scenario summary
+combined_summary <- grouped %>%
+  left_join(deficit_summary, by = c("scenario_id", "dwuc"))
+
+# This is cleaner and more efficient
+combined_summary <- combined_summary %>%
+  mutate(current_tier = case_when(
+    is.na(pct_met_100) | is.na(worst_deficit) ~ NA_character_,
+    pct_met_100 >= 90 & worst_deficit >= 75 ~ "Tier 1",
+    pct_met_100 >= 70 & worst_deficit >= 75 ~ "Tier 2",
+    pct_met_100 >= 50 & worst_deficit >= 50 ~ "Tier 3",
+    TRUE ~ "Tier 4"))
+
+# Filter out NAs
+combined_summary_filtered <- combined_summary %>%
+  filter(!is.na(current_tier))
+
+# Plot without NAs
+ggplot(combined_summary_filtered, aes(x = scenario_id, fill = current_tier)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Current Tier Distribution by Scenario (Excluding NAs)",
+       x = "Scenario",
+       y = "Proportion of Demand Units",
+       fill = "Tier") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")%>%
+  select(X02_SU)
+```
+
+

@@ -17,12 +17,6 @@ Set settings and universal variables
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here())
 
-sec_per_min = 60
-min_per_hr = 60
-hr_per_day = 24
-day_per_month = 30
-cubic_ft_per_acre_ft = 43559.9
-
 options(scipen = 999)
 ```
 
@@ -44,9 +38,14 @@ extract_scenario_id = function(filename) {
   str_extract(filename, "s\\d+") %>% tolower()}
 ```
 
+# Processing functions
+
+## Process individual file
+
 Core function to process either a demand or delivery file. 
 
-Cleans up header rows, extracts units for demand or delivery values, and converts everything to thousand acre feet.
+Cleans up header rows, extracts values for demand or delivery (in TAF), and pivots longer so we have 1 row per demand unit per month (rather than 1 column per demand unit, which is how the raw data is structured). Filters for only demand units whose demand ID or delivery ID is in our crosswalk dataset
+
 Returns a processed dataset of either demand or delivery values by demand unit and month
 ```{r}
 process_file = function(file_path, crosswalk, data_type = c("demand", "delivery")) {
@@ -67,15 +66,16 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
       demand_unit_id = 2,    
       units = 7)
   
-  dates = data %>%
-  slice(1) %>%  # Get the row with dates
-  select(8:ncol(.)) %>%
-  pivot_longer(
-    cols = everything(),
-    names_to = "date_id",
-    values_to = "date")
+  dates = data%>%
+    slice(1) %>%  
+    select(8:ncol(.)) %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "date_id",
+      values_to = "date")
   
   # Filter for only demand units whose demand ID or delivery ID is in our crosswalk dataset
+  # Convert any blank values to 0
   id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
   processed = data%>%
     filter(units == "TAF" & demand_unit_id %in% crosswalk[[id_col]])%>%
@@ -87,7 +87,11 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
     left_join(., dates, by = "date_id")%>%
     select(-date_id)%>%
     mutate(scenario_id = scenario_id,
-           value_taf = as.numeric(ifelse(value_taf == "", 0, value_taf)))
+           value_taf = as.numeric(ifelse(value_taf == "", 0, value_taf)))%>%
+    group_by(demand_unit_id)%>%
+    mutate(sum = sum(value_taf))%>%
+    filter(sum != 0)%>%
+    select(-sum)
   
   # Rename columns based on data type and return processed dataset
   if (data_type == "demand") {
@@ -103,15 +107,20 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
   return(processed)}
 ```
 
-Main function to process a complete scenario (demand + delivery pair).:
-- Goes through the demand and delivery folders to identify scenarios, and if both files found for a given scenario, 
-    calls the function above to process both the demand and delivery data. 
-- Creates a dataset of missing demand units for that scenario and writes to a csv for each scenario.
-- Joins demand and delivery data by demand unit ID and filters out rows with any missing values. Calculates monthly %
-    of demand met and writes to a csv
-- Aggregates demand and delivery by year for each demand unit and calculates annual % of demand met. Saves this to a csv for each scenario as
-    well
-- Calculates tiers based on annual % of demand met
+
+## Process complete scenario
+
+Main function to process a complete scenario (demand + delivery pair):
+
+Goes through the demand and delivery folders to identify scenarios, and if both files found for a given scenario, calls the function above to process both the demand and delivery data. 
+
+Creates a dataset of missing demand units for that scenario and writes to a csv for each scenario.
+
+Joins demand and delivery data by demand unit ID and filters out rows with any missing values. Calculates monthly % of demand met and writes to a csv
+
+Aggregates demand and delivery by year for each demand unit and calculates annual % of demand met. Saves this to a csv for each scenario as well
+
+Calculates tiers based on annual % of demand met
 ```{r}
 process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswalk, output_base = "Outputs") {
   cat("Processing scenario:", scenario_id, "\n")
@@ -192,7 +201,12 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
   return(tiers)}
 ```
 
+## Process all scenarios
 
+Last function to go through the demand and delivery folders, pull out all the files, and calls upon the function above to process each scenario and generate the corresponding outputs. 
+
+Extracts the tier categorisations for each scenario and combines it into one matrix containing tier values across all scenarios and demand units, following the example in [this folder](https://drive.google.com/drive/folders/1PMgwXjWK0eHX_2Zac4_QNrA_BaFZNpF0). 
+Saves the master tier matrix as a csv
 ```{r}
 # Process ALL scenarios and create tier matrix
 process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, output_base = "Outputs") {
@@ -226,7 +240,10 @@ process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, outp
     write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix.csv"), row.names = F)}}
 ```
 
+# Run functions
 
+Specify demand and delivery folders as inputs, as well as crosswalk sheet with key to connect demand unit ID, demand-specific ID, and delivery-specific ID. 
+Specify folder where outputs will be saved
 ```{r}
 results = process_all_scenarios(
   demand_folder = "Inputs/Demands",
@@ -238,6 +255,10 @@ results = process_all_scenarios(
 
 ```{r}
 read.csv("Outputs/Missing demand units/s0010_missing_dus.csv")
+  reframe(dem = sum(demand_missing), del = sum(delivery_missing))
+
+
+
 read.csv("Outputs/Missing demand units/s0045_missing_dus.csv")
 
 read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")%>%
