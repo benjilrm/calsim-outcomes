@@ -179,7 +179,8 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
   
   # Calculate tiers
   tiers = combined_by_year %>%
-    mutate(demand_met = ifelse(percent_demand_met >= 90, 1, 0)) %>%
+    mutate(percent_demand_met = round(percent_demand_met),
+      demand_met = ifelse(percent_demand_met >= 90, 1, 0)) %>%
     group_by(scenario_id, dwuc) %>%
     reframe(
       perc_years_met = mean(demand_met, na.rm = T) * 100,
