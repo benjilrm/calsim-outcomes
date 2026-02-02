@@ -82,10 +82,8 @@ grouped = combined_df %>%
     pct_met_90 = mean(percent_demand_met >= 90, na.rm = TRUE) * 100,
     pct_met_75 = mean(percent_demand_met >= 75, na.rm = TRUE) * 100,
     pct_met_50 = mean(percent_demand_met >= 50, na.rm = TRUE) * 100,
-    mean_demand_met = mean(percent_demand_met, na.rm = TRUE),
-    median_demand_met = median(percent_demand_met, na.rm = TRUE),
+    median_demand_met = median(percent_demand_met, na.rm = T),
     min_demand_met = min(percent_demand_met, na.rm = TRUE),
-    max_demand_met = max(percent_demand_met, na.rm = TRUE),
     .groups = 'drop')
 
 ggplot(grouped, aes(x = pct_met_100)) +
@@ -106,6 +104,23 @@ ggplot(grouped, aes(x = min_demand_met)) +
        x = "% Demand Met in Worst Year",
        y = "# of Demand Units") +
   theme_bw()
+
+ggplot(grouped, aes(x = median_demand_met)) +
+  geom_histogram(binwidth = 5, fill = "pink4", alpha = 0.7)+ 
+  geom_vline(xintercept = c(50, 70, 90), linetype = "dashed", size = 1) +
+  facet_wrap(~scenario_id, ncol = 4) +
+  labs(title = "Distribution of Median % Demand Met by Demand Unit",
+       x = "Median % Demand Met",
+       y = "# of Demand Units") +
+  theme_bw()
+
+grouped
+```
+
+
+```{r}
+combined_df%>%
+  filter(dwuc == "26N_NU1")
 ```
 
 

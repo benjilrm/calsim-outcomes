@@ -17,6 +17,8 @@ Set settings and universal variables
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here())
 options(scipen = 999)
+
+dus_of_interest = c("MWD", "PLMAS", "CSB103", "02_SU", "26N_NU3")
 ```
 
 # Import and process data
@@ -66,15 +68,14 @@ demand_processed = processed_wide%>%
     cols = -demand_id,
     names_to = "date_id",
     values_to = "demand_taf")%>%
-  mutate(demand_taf = as.numeric(ifelse(demand_taf == "", 0, demand_taf)))%>%
+  #mutate(demand_taf = as.numeric(ifelse(demand_taf == "", 0, demand_taf)))%>%
   left_join(., dates, by = "date_id")%>%
   select(-date_id)%>%
   left_join(., crosswalk %>% select(-delivery_id), by = "demand_id")
 
 demand_processed%>%
-  group_by(demand_id, dwuc)%>%
-  reframe(sum = sum(demand_taf))%>%
-  arrange(sum)
+  #filter(demand_taf == "")%>%
+  filter(dwuc %in% dus_of_interest)
 ```
 
 
@@ -97,6 +98,9 @@ processed_wide = raw%>%
     delivery_id = 2,    
     units = 7)
 
+processed_wide%>%
+  filter(grepl("D_CACWD", delivery_id))
+
 dates = processed_wide %>%
   slice(1) %>%  # Get the row with dates
   select(8:ncol(.)) %>%
@@ -112,19 +116,39 @@ delivery_processed = processed_wide%>%
     cols = -delivery_id,
     names_to = "date_id",
     values_to = "delivery_taf")%>%
-  mutate(delivery_taf = as.numeric(ifelse(delivery_taf == "", 0, delivery_taf)))%>%
+  #mutate(delivery_taf = as.numeric(ifelse(delivery_taf == "", 0, delivery_taf)))%>%
   left_join(., dates, by = "date_id")%>%
   left_join(crosswalk %>% select(-demand_id), by = "delivery_id")
 ```
 
 ```{r}
 combined = full_join(delivery_processed, demand_processed, by = c("dwuc", "date"))%>%
+  mutate(delivery_taf = as.numeric(ifelse(delivery_taf == "", NA, delivery_taf)),
+         demand_taf = as.numeric(ifelse(demand_taf == "", NA, demand_taf)))%>%
   mutate(percent_demand_met = ifelse(delivery_taf >= demand_taf, 100, delivery_taf / demand_taf * 100),
          year = year(date))%>%
   select(dwuc, delivery_id, demand_id, year, date, delivery_taf, demand_taf, percent_demand_met)
 
 combined%>%
-  filter(delivery_taf > 0 & demand_taf == 0)
+  #filter(is.na(percent_demand_met))%>%
+  filter(dwuc == "02_SU" & (demand_taf == 0 | is.na(demand_taf) | delivery_taf == 0 | is.na(delivery_taf)))
+  filter(dwuc %in% dus_of_interest)
+  
+read.csv("Outputs/Annual demand met/s0044_demand_met_by_year.csv")%>%
+  filter(dwuc == "26N_NU3")%>%
+  mutate(demand_met = ifelse(percent_demand_met >= 100, 1, 0))
+    group_by(scenario_id, dwuc) %>%
+    reframe(
+      perc_years_met = sum(demand_met) / n() * 100,
+      min_met = min(percent_demand_met)) %>%
+    ungroup() %>%
+    mutate(
+      tier = case_when(
+        perc_years_met >= 90 & min_met > 75 ~ 1,
+        perc_years_met >= 70 & min_met > 75 ~ 2,
+        perc_years_met >= 50 & min_met > 50 ~ 3,
+        T ~ 4)) %>%
+    select(scenario_id, dwuc, tier)
 ```
 
 # Analysis
@@ -219,29 +243,31 @@ read.csv("Outputs/Annual demand met/s0010_demand_met_by_year.csv")%>%
   filter(dwuc == "02_PU")
 
 read.csv("Outputs/Monthly demand met/s0010_demand_met_by_month.csv")%>%
-  filter(dwuc == "02_PU" & year < 1923)
+  filter(dwuc == "02_PU" & year == 1921)
   summarise(sum = sum(delivery_taf))
 
 read.csv("Inputs/Deliveries/s0010_draftDCP_NDD_SWP6000_Beth_2020_DELIVERIES.csv", skip = 1)%>%
   select(contains("DN_02_PU"))
-  filter(dwuc == "02_PU" & year == 1921)%>%
+  filter( year == 1921)%>%
   summarise(sum = sum(delivery_taf))
 ```
 
 ```{r}
-read.csv("C:/Users/benji/Downloads/s0010_draftDCP_NDD_SWP6000_Beth_2020_DELIVERIES-ANNUAL.csv", skip = 1)%>%
-  select(DN_02_PU)
+read.csv("C:/Users/benji/Downloads/s0010_draftDCP_NDD_SWP6000_Beth_2020_DELIVERIES-ANNUAL.csv", skip = 1)
 ```
 
 
 Missingness
 ```{r}
-read.csv("Outputs/Missing demand units/s0010_missing_dus.csv")
+read.csv("Outputs/Missing demand units/s0045_missing_dus.csv")
   reframe(dem = sum(demand_missing), del = sum(delivery_missing))
 
 read.csv("Inputs/Deliveries/s0010_draftDCP_NDD_SWP6000_Beth_2020_DELIVERIES.csv", skip = 1)%>%
   select(contains("D_CLRLK_CLLPT"))
 read.csv("Inputs/Demands/s0010_draftDCP_NDD_SWP6000_Beth_2020_DEMANDS.csv", skip = 1)%>%
   select(contains("U_CLPT"))
+
+read.csv("Outputs/Monthly demand met/s0010_demand_met_by_month.csv")%>%
+  filter(demand_taf == 0 | delivery_taf == 0)
 ```
 

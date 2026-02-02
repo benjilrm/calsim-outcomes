@@ -140,15 +140,11 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
   # Create list of missing units
   missing = crosswalk %>%
     mutate(
+      scenario_id = scenario_id,
       demand_missing = ifelse(!demand_id %in% demand_data$demand_id, 1, 0),
       delivery_missing = ifelse(!delivery_id %in% delivery_data$delivery_id, 1, 0)) %>%
-    filter(delivery_missing == 1 | demand_missing == 1)
-  
-  # Save missing units (optional)
-  if (nrow(missing) > 0 && !is.null(output_base)) {
-    missing_dir = file.path(output_base, "Missing demand units")
-    dir.create(missing_dir, showWarnings = FALSE, recursive = TRUE)
-    write.csv(missing, file.path(missing_dir, paste0(scenario_id, "_missing_dus.csv")), row.names = FALSE)}
+    filter(delivery_missing == 1 | demand_missing == 1)%>%
+    select(scenario_id, everything())
   
   # Combine and filter data
   combined_monthly = full_join(delivery_data, demand_data, by = c("dwuc", "date", "scenario_id"))%>%
@@ -164,7 +160,6 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
     monthly_dir = file.path(output_base, "Monthly demand met")
     dir.create(monthly_dir, showWarnings = FALSE, recursive = TRUE)
     write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)}
-  
   
   # Calculate annual aggregates
   combined_by_year = combined_monthly %>%
@@ -198,7 +193,7 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
         T ~ 4)) %>%
     select(scenario_id, dwuc, tier)
   
-  return(tiers)}
+  return(list(tiers = tiers, missing = missing))}
 ```
 
 ## Process all scenarios
@@ -221,9 +216,15 @@ process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, outp
   
   cat("Found", length(common_scenarios), "scenarios to process\n\n")
   
-  # Process each scenario and collect tier dfs
-  all_tiers = map_df(common_scenarios, function(scenario_id) {
-    process_scenario(scenario_id, demand_folder, delivery_folder, crosswalk)})
+  # Process each scenario and collect results
+  all_results = map(common_scenarios, function(scenario_id) {
+    process_scenario(scenario_id, demand_folder, delivery_folder, crosswalk, output_base)})
+  
+  # Extract tiers from all results and combine
+  all_tiers = map_df(all_results, ~ .x$tiers)
+  
+  # Extract missing data from all results and combine
+  all_missing = map_df(all_results, ~ .x$missing)
   
   # Convert to matrix format
   tier_matrix = all_tiers %>%
@@ -237,7 +238,16 @@ process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, outp
   if (!is.null(output_base)) {
     tier_dir = file.path(output_base, "Tier summaries")
     dir.create(tier_dir, showWarnings = F, recursive = T)
-    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix.csv"), row.names = F)}}
+    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix.csv"), row.names = F)}
+  
+  # Save master missing values file
+  if (!is.null(output_base) && nrow(all_missing) > 0) {
+    missing_dir = file.path(output_base, "Missing demand units")
+    dir.create(missing_dir, showWarnings = F, recursive = T)
+    write.csv(all_missing, file.path(missing_dir, "all_scenarios_missing_dus.csv"), row.names = F)}
+  
+  # Return both for further analysis if needed
+  return(list(tier_matrix = tier_matrix, missing_data = all_missing))}
 ```
 
 # Run functions
@@ -259,15 +269,15 @@ read.csv("Outputs/Missing demand units/s0010_missing_dus.csv")
 
 
 
-read.csv("Outputs/Missing demand units/s0045_missing_dus.csv")
+read.csv("Outputs/Missing demand units/all_scenarios_missing_dus.csv")
 
-read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")%>%
-  filter(dwuc == "CSB103")
+read.csv("Outputs/Monthly demand met/s0045_demand_met_by_month.csv")
 
 read.csv("Outputs/Annual demand met/s0010_demand_met_by_year.csv")
 read.csv("Outputs/Annual demand met/s0045_demand_met_by_year.csv")
 
-read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")
+read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")%>%
+  select(scenario_id,  CSB103)
 ```
 
 
