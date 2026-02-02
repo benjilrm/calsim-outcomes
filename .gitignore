@@ -27,6 +27,8 @@ vignettes/*.pdf
 *.knit.md
 # R Environment Variables
 .Renviron
+# Images
+/*.png
 # pkgdown site
 docs/
 # translation temp files
