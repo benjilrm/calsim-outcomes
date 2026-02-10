@@ -249,8 +249,6 @@ tiers = combined_by_year%>%
     perc_years_met >= 70 & min_met > 75 ~ 2,
     perc_years_met >= 50 & min_met > 50 ~ 3,
     T ~ 4))
-
-# rather than separate csv of tiers for each scenario, combine all scenarios so that we have one row per scenario and one column per demand unit (dwuc). and then the value in the corresponding cell is the tier (1, 2, 3, 4)
 ```
 
 

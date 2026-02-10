@@ -104,24 +104,24 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
       left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")}
   
   # Get the actual column name that was created
-  actual_id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
-  actual_value_col = ifelse(data_type == "demand", "demand_taf", "delivery_taf")
+  #actual_id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
+  #actual_value_col = ifelse(data_type == "demand", "demand_taf", "delivery_taf")
   
-  # Create list of missing units - FIXED
+  # Create list of missing units
   not_present = crosswalk %>%
-    select(all_of(id_col)) %>%  # Use the original id_col name
+    select(all_of(id_col)) %>%
     distinct() %>%
-    mutate(status = ifelse(!.data[[id_col]] %in% processed[[actual_id_col]], 
+    mutate(status = ifelse(!.data[[id_col]] %in% processed[[id_col]], 
                            "Not in data", NA)) %>%
     filter(!is.na(status))
   
-  # Check if all values are either 0 or NA - FIXED
+  # Check if all values are either 0 or NA
   all_blank_or_all_zero = processed %>%
-    group_by(.data[[actual_id_col]]) %>%
+    group_by(.data[[id_col]]) %>%
     reframe(
       status = case_when(
-        all(is.na(.data[[actual_value_col]])) ~ "All blank", 
-        all(.data[[actual_value_col]] == 0, na.rm = T) ~ "All zero", 
+        all(is.na(.data[[value_col]])) ~ "All blank", 
+        all(.data[[value_col]] == 0, na.rm = T) ~ "All zero", 
         T ~ NA)) %>%
     ungroup() %>%
     filter(!is.na(status))
@@ -130,10 +130,6 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
     mutate(scenario_id = scenario_id)
   
   return(list(processed = processed, missing = missing))}
-```
-
-```{r}
-process_file("Inputs/Deliveries/s0011_adjBL_wTUCP_DELIVERIES.csv", crosswalk, "delivery")$missing
 ```
 
 
@@ -176,10 +172,9 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
     select(scenario_id, dwuc, date, year, delivery_id, delivery_taf, demand_id, demand_taf, percent_demand_met)
   
   # Save monthly data
-  if (!is.null(output_base)) {
-    monthly_dir = file.path(output_base, "Monthly demand met")
-    dir.create(monthly_dir, showWarnings = FALSE, recursive = TRUE)
-    write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)}
+  monthly_dir = file.path(output_base, "Monthly demand met")
+  dir.create(monthly_dir, showWarnings = FALSE, recursive = TRUE)
+  #write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)
   
   # Calculate annual aggregates
   combined_by_year = combined_monthly %>%
@@ -192,10 +187,9 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
       percent_demand_met = ifelse(annual_delivery >= annual_demand, 100, annual_delivery / annual_demand * 100))
   
   # Save annual data 
-  if (!is.null(output_base)) {
-    annual_dir = file.path(output_base, "Annual demand met")
-    dir.create(annual_dir, showWarnings = FALSE, recursive = TRUE)
-    write.csv(combined_by_year, file.path(annual_dir, paste0(scenario_id, "_demand_met_by_year.csv")), row.names = FALSE)}
+  annual_dir = file.path(output_base, "Annual demand met")
+  dir.create(annual_dir, showWarnings = FALSE, recursive = TRUE)
+  #write.csv(combined_by_year, file.path(annual_dir, paste0(scenario_id, "_demand_met_by_year.csv")), row.names = FALSE)
   
   # Calculate tiers
   tiers = combined_by_year %>%
@@ -204,18 +198,21 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
     group_by(scenario_id, dwuc) %>%
     reframe(
       perc_years_met = mean(demand_met, na.rm = T) * 100,
-      min_met = min(percent_demand_met)) %>%
+      min_met = min(percent_demand_met),
+      below_50 = mean(percent_demand_met < 50)*100)%>%
     ungroup() %>%
     mutate(
       tier = case_when(
         perc_years_met >= 90 & min_met > 70 ~ 1,
-        perc_years_met >= 70 & min_met > 70 ~ 2,
-        perc_years_met >= 50 & min_met > 50 ~ 3,
+        perc_years_met >= 70 & min_met > 50 ~ 2,
+        perc_years_met >= 50 & below_50 <= 5 ~ 3,
         T ~ 4)) %>%
     select(scenario_id, dwuc, tier)
   
   return(list(tiers = tiers, missing_demand = missing_demand, missing_delivery = missing_delivery))}
 ```
+
+
 
 ## Process all scenarios
 
@@ -264,13 +261,14 @@ process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, outp
   if (!is.null(output_base)) {
     tier_dir = file.path(output_base, "Tier summaries")
     dir.create(tier_dir, showWarnings = F, recursive = T)
-    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix.csv"), row.names = F)}
+    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix_alt4.csv"), row.names = F)}
   
   # Save master missing values file
   missing_dir = file.path(output_base, "Missing demand units")
   dir.create(missing_dir, showWarnings = F, recursive = T)
-  write.csv(all_missing_demand, file.path(missing_dir, "all_scenarios_missing_demand.csv"), row.names = F)
-  write.csv(all_missing_delivery, file.path(missing_dir, "all_scenarios_missing_delivery.csv"), row.names = F)}
+  #write.csv(all_missing_demand, file.path(missing_dir, "all_scenarios_missing_demand.csv"), row.names = F)
+  #write.csv(all_missing_delivery, file.path(missing_dir, "all_scenarios_missing_delivery.csv"), row.names = F)
+  }
 ```
 
 # Run functions
@@ -282,7 +280,7 @@ results = process_all_scenarios(
   demand_folder = "Inputs/Demands",
   delivery_folder = "Inputs/Deliveries",
   crosswalk = crosswalk,
-  output_base = "Outputs")  # Set to NULL if you don't want intermediate files saved
+  output_base = "Outputs")
 ```
 
 

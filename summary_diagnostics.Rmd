@@ -32,7 +32,14 @@ combined_df <- do.call(rbind, lapply(csv_files, read_csv))
 # Plots
 
 ```{r}
-read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")%>%
+tier_csvs = list.files("Outputs/Tier summaries/", full.names = T)
+
+
+lapply(tier_csvs, function(file) {
+  file_name <- basename(file) %>% tools::file_path_sans_ext()
+  scenario_name = str_to_title(str_extract(file, "(?<=_)[^_]+$"))
+  
+  read.csv(file) %>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
   group_by(scenario_id)%>%
@@ -43,7 +50,7 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix.csv")%>%
   unique()%>%
   ggplot(aes(scenario_id, prop, fill = as.factor(tier)))+
   geom_col(position="stack")+
-  labs(x= "Scenario", y = "Proportion of Demand Units", fill = "Tier")
+  labs(x= "Scenario", y = "Proportion of Demand Units", fill = "Tier", title = scenario_name)})
 ```
 
 ```{r}
