@@ -204,8 +204,8 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
     mutate(
       tier = case_when(
         perc_years_met >= 90 & min_met > 70 ~ 1,
-        perc_years_met >= 70 & min_met > 50 ~ 2,
-        perc_years_met >= 50 & below_50 <= 5 ~ 3,
+        perc_years_met >= 50 & min_met > 50 ~ 2,
+        perc_years_met >= 50 & below_50 <= 20 ~ 3,
         T ~ 4)) %>%
     select(scenario_id, dwuc, tier)
   
@@ -261,7 +261,7 @@ process_all_scenarios = function(demand_folder, delivery_folder, crosswalk, outp
   if (!is.null(output_base)) {
     tier_dir = file.path(output_base, "Tier summaries")
     dir.create(tier_dir, showWarnings = F, recursive = T)
-    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix_alt4.csv"), row.names = F)}
+    write.csv(tier_matrix, file.path(tier_dir, "all_scenarios_tier_matrix_alt5.csv"), row.names = F)}
   
   # Save master missing values file
   missing_dir = file.path(output_base, "Missing demand units")
@@ -288,7 +288,37 @@ results = process_all_scenarios(
 read.csv("Outputs/Missing demand units/all_scenarios_missing_demand.csv")
 read.csv("Outputs/Missing demand units/all_scenarios_missing_delivery.csv")
 
-
+read.csv("Outputs/Monthly demand met/s0011_demand_met_by_month.csv")%>%
+  filter(dwuc == "MWD")%>%
+  mutate(date = as.Date(date))%>%
+  ggplot(aes(x = date, y = delivery_taf))+
+  geom_line(color = "steelblue", size = 0.5) +
+  #geom_smooth(method = "loess", color = "red", se = TRUE, alpha = 0.2) +
+  scale_x_date(date_breaks = "10 years", 
+               date_labels = "%Y",
+               limits = as.Date(c("1921-10-31", "2021-09-30"))) +
+  labs(title = "Monthly Time Series, Metropolitan",
+       x = "Year", 
+       y = "Monthly Delivery (TAF)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  reframe(mean(annual_delivery))
+  
+  read.csv("Outputs/Monthly demand met/s0011_demand_met_by_month.csv")%>%
+  filter(dwuc == "MWD")%>%
+  mutate(date = as.Date(date))%>%
+  ggplot(aes(x = date, y = delivery_taf))+
+  geom_line(color = "coral2", size = 0.5) +
+  #geom_smooth(method = "loess", color = "red", se = TRUE, alpha = 0.2) +
+  scale_x_date(date_breaks = "10 years", 
+               date_labels = "%Y",
+               limits = as.Date(c("1921-10-31", "2021-09-30"))) +
+  labs(title = "Monthly Time Series, Metropolitan",
+       x = "Year", 
+       y = "Monthly Demand (TAF)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  reframe(mean(annual_delivery))
 ```
 
 
