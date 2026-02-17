@@ -29,6 +29,7 @@ csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = T)
 
 combined_df <- do.call(rbind, lapply(csv_files, read_csv))
 ```
+
 # Plots
 
 ```{r}
@@ -53,6 +54,50 @@ lapply(tier_csvs, function(file) {
   labs(x= "Scenario", y = "Proportion of Demand Units", fill = "Tier", title = scenario_name)})
 ```
 
+# Handout plots
+```{r}
+read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
+  pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
+  filter(!is.na(tier))%>%
+  group_by(scenario_id)%>%
+  mutate(total_n = n())%>%
+  ungroup()%>%
+  group_by(scenario_id, tier)%>%
+  reframe(prop = n()/total_n)%>%
+  unique()%>%
+  filter(scenario_id %in% c("s0020", "s0021", "s0023", "s0024"))%>%
+  ggplot(aes(scenario_id, prop*100, fill = as.factor(tier)))+
+  geom_col(position="dodge")+
+  labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier", caption = "Insert tier definitions here")+
+  theme_bw()
+```
+```{r}
+folder_path <- "Outputs/Monthly demand met/"  
+
+scenarios <- c("s0020", "s0021", "s0023", "s0024")
+dwucs_to_keep <- c("CCWD", "MWD", "KCWA")
+
+all_data <- map_dfr(scenarios, function(scenario) {
+  file_path <- paste0(folder_path, scenario, "_demand_met_by_month.csv")
+  df <- read.csv(file_path)%>%
+      mutate(date = as.Date(date)) %>%
+      filter(dwuc %in% dwucs_to_keep)%>%
+    mutate(id = paste(scenario_id, dwuc, sep = ", "))
+  return(df)})
+
+ggplot(all_data, aes(x = date, y = delivery_taf)) +
+  geom_line(color = "steelblue", size = 0.7) +
+  geom_point(color = "steelblue", size = 0.5, alpha = 0.3) +
+  facet_wrap(~id,  ncol = 3, nrow = 4) +
+  labs(x = "Date", y = "Monthly Deliveries (TAF)")+ 
+  theme_bw()+
+  scale_x_date(date_breaks = "20 years", date_labels = "%Y")
+```
+
+
+
+
+# Archive
 ```{r}
 combined_df%>%
   ggplot(aes(percent_demand_met, fill = scenario_id))+
