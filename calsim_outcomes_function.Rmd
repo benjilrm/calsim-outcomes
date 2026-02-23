@@ -174,7 +174,7 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
   # Save monthly data
   monthly_dir = file.path(output_base, "Monthly demand met")
   dir.create(monthly_dir, showWarnings = FALSE, recursive = TRUE)
-  #write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)
+  write.csv(combined_monthly, file.path(monthly_dir, paste0(scenario_id, "_demand_met_by_month.csv")), row.names = FALSE)
   
   # Calculate annual aggregates
   combined_by_year = combined_monthly %>%
@@ -189,7 +189,7 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
   # Save annual data 
   annual_dir = file.path(output_base, "Annual demand met")
   dir.create(annual_dir, showWarnings = FALSE, recursive = TRUE)
-  #write.csv(combined_by_year, file.path(annual_dir, paste0(scenario_id, "_demand_met_by_year.csv")), row.names = FALSE)
+  write.csv(combined_by_year, file.path(annual_dir, paste0(scenario_id, "_demand_met_by_year.csv")), row.names = FALSE)
   
   # Calculate tiers
   tiers = combined_by_year %>%
