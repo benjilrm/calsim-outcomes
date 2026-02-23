@@ -70,28 +70,66 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
   geom_col(position="dodge")+
   labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier", caption = "Insert tier definitions here")+
   theme_bw()
+
+
+read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
+  pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
+  filter(!is.na(tier))%>%
+  group_by(scenario_id)%>%
+  mutate(total_n = n())%>%
+  ungroup()%>%
+  group_by(scenario_id, tier)%>%
+  reframe(prop = n()/total_n)%>%
+  unique()%>%
+  filter(scenario_id == "s0020")%>%
+  ggplot(aes(scenario_id, prop*100, fill = as.factor(tier)))+
+  geom_col(position="dodge")+
+  labs(x= "Baseline Scenario", y = "Percentage of Demand Units", fill = "Tier")+
+  theme_bw()
 ```
 ```{r}
 folder_path <- "Outputs/Monthly demand met/"  
 
 scenarios <- c("s0020", "s0021", "s0023", "s0024")
-dwucs_to_keep <- c("CCWD", "MWD", "KCWA")
+dwucs_to_keep <- c("20_NU1", "NAPA", "61_NU2", "90_PU", "MWD")
 
 all_data <- map_dfr(scenarios, function(scenario) {
   file_path <- paste0(folder_path, scenario, "_demand_met_by_month.csv")
   df <- read.csv(file_path)%>%
-      mutate(date = as.Date(date)) %>%
+      mutate(date = as.Date(date), 
+             month = month(date))%>%
       filter(dwuc %in% dwucs_to_keep)%>%
-    mutate(id = paste(scenario_id, dwuc, sep = ", "))
+      mutate(id = paste(scenario_id, dwuc, sep = ", "))%>%
+      group_by(id, scenario_id, dwuc, month)%>%
+      reframe(monthly_avg = median(delivery_taf),
+              p10 = quantile(delivery_taf, 0.1),
+              p90 = quantile(delivery_taf, 0.9))
   return(df)})
 
-ggplot(all_data, aes(x = date, y = delivery_taf)) +
-  geom_line(color = "steelblue", size = 0.7) +
+ggplot(all_data, aes(x = month, y = monthly_avg)) +
+  geom_point(color = "steelblue")+
+  geom_line(color = "steelblue", linewidth = 0.7) +
   geom_point(color = "steelblue", size = 0.5, alpha = 0.3) +
-  facet_wrap(~id,  ncol = 3, nrow = 4) +
-  labs(x = "Date", y = "Monthly Deliveries (TAF)")+ 
+  facet_wrap(dwuc ~ scenario_id,  ncol = 4, nrow = 5) +
+  labs(x = "Month", y = "Median Monthly Deliveries (TAF)")+ 
   theme_bw()+
-  scale_x_date(date_breaks = "20 years", date_labels = "%Y")
+  scale_x_continuous(breaks = seq_along(month.abb), labels = month.abb)+
+  theme(axis.text.x = element_text(angle = 55, hjust = 1),
+        strip.text = element_blank())+
+  geom_ribbon(aes(ymin = p10, ymax = p90), alpha = 0.2, fill = "blue")
+
+all_data%>%
+  filter(scenario_id == "s0020")%>%
+  ggplot(aes(x = month, y = monthly_avg)) +
+  geom_point(color = "steelblue")+
+  geom_line(color = "steelblue", linewidth = 0.7) +
+  geom_point(color = "steelblue", size = 0.5, alpha = 0.3) +
+  facet_wrap(~dwuc) +
+  labs(x = "Month", y = "Median Monthly Deliveries (TAF)")+ 
+  theme_bw()+
+  scale_x_continuous(breaks = seq_along(month.abb), labels = month.abb)+
+  theme(axis.text.x = element_text(angle = 55, hjust = 1))+
+  geom_ribbon(aes(ymin = p10, ymax = p90), alpha = 0.2, fill = "blue")
 ```
 
 
