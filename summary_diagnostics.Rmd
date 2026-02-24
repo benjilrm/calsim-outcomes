@@ -68,8 +68,13 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
   filter(scenario_id %in% c("s0020", "s0021", "s0023", "s0024"))%>%
   ggplot(aes(scenario_id, prop*100, fill = as.factor(tier)))+
   geom_col(position="dodge")+
-  labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier", caption = "Insert tier definitions here")+
-  theme_bw()
+  labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier")+
+  theme_bw()+
+  scale_x_discrete(labels = c(
+    "s0020" = "Baseline",
+    "s0021" = "Current operations \n without TUCPs", 
+    "s0023" = "2024 USBR BiOps \n without TUCPs",
+    "s0024" = "2024 USBR BiOps"))
 
 
 read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
@@ -84,14 +89,15 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
   filter(scenario_id == "s0020")%>%
   ggplot(aes(scenario_id, prop*100, fill = as.factor(tier)))+
   geom_col(position="dodge")+
-  labs(x= "Baseline Scenario", y = "Percentage of Demand Units", fill = "Tier")+
-  theme_bw()
+  labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier")+
+  theme_bw()+
+  scale_x_discrete(labels = c("s0020" = "Baseline Scenario"))
 ```
 ```{r}
 folder_path <- "Outputs/Monthly demand met/"  
 
 scenarios <- c("s0020", "s0021", "s0023", "s0024")
-dwucs_to_keep <- c("20_NU1", "NAPA", "61_NU2", "90_PU", "MWD")
+dwucs_to_keep <- c("20_NU1", "NAPA", "90_PU", "MWD")
 
 all_data <- map_dfr(scenarios, function(scenario) {
   file_path <- paste0(folder_path, scenario, "_demand_met_by_month.csv")
@@ -102,34 +108,40 @@ all_data <- map_dfr(scenarios, function(scenario) {
       mutate(id = paste(scenario_id, dwuc, sep = ", "))%>%
       group_by(id, scenario_id, dwuc, month)%>%
       reframe(monthly_avg = median(delivery_taf),
-              p10 = quantile(delivery_taf, 0.1),
-              p90 = quantile(delivery_taf, 0.9))
+              p25 = quantile(delivery_taf, 0.25),
+              p75 = quantile(delivery_taf, 0.75))
   return(df)})
 
-ggplot(all_data, aes(x = month, y = monthly_avg)) +
+p1 = ggplot(all_data, aes(x = month, y = monthly_avg)) +
   geom_point(color = "steelblue")+
   geom_line(color = "steelblue", linewidth = 0.7) +
   geom_point(color = "steelblue", size = 0.5, alpha = 0.3) +
-  facet_wrap(dwuc ~ scenario_id,  ncol = 4, nrow = 5) +
+  facet_grid(dwuc ~ scenario_id, scales = "free_y") +
   labs(x = "Month", y = "Median Monthly Deliveries (TAF)")+ 
   theme_bw()+
   scale_x_continuous(breaks = seq_along(month.abb), labels = month.abb)+
   theme(axis.text.x = element_text(angle = 55, hjust = 1),
-        strip.text = element_blank())+
-  geom_ribbon(aes(ymin = p10, ymax = p90), alpha = 0.2, fill = "blue")
+        strip.text = element_blank(),
+        panel.spacing.y = unit(1, "lines"))+
+  geom_ribbon(aes(ymin = p25, ymax = p75), alpha = 0.2, fill = "blue")
+
+ggsave("Plots/time_series_for_handout.png", p1, height = 7, width = 10)
 
 all_data%>%
   filter(scenario_id == "s0020")%>%
+  mutate(dwuc = factor(dwuc, 
+                       levels = c("20_NU1", "90_PU", "MWD", "NAPA"),
+                       labels = c("Davis / Woodland", "Huron / Avenal / Coalinga", "Metropolitan", "Napa / St. Helena / Calistoga"))) %>%
   ggplot(aes(x = month, y = monthly_avg)) +
   geom_point(color = "steelblue")+
   geom_line(color = "steelblue", linewidth = 0.7) +
   geom_point(color = "steelblue", size = 0.5, alpha = 0.3) +
-  facet_wrap(~dwuc) +
+  facet_wrap(~dwuc, scales = "free_y", ncol = 2) +
   labs(x = "Month", y = "Median Monthly Deliveries (TAF)")+ 
   theme_bw()+
   scale_x_continuous(breaks = seq_along(month.abb), labels = month.abb)+
   theme(axis.text.x = element_text(angle = 55, hjust = 1))+
-  geom_ribbon(aes(ymin = p10, ymax = p90), alpha = 0.2, fill = "blue")
+  geom_ribbon(aes(ymin = p25, ymax = p75), alpha = 0.2, fill = "blue")
 ```
 
 
