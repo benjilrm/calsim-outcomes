@@ -65,16 +65,16 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
   group_by(scenario_id, tier)%>%
   reframe(prop = n()/total_n)%>%
   unique()%>%
-  filter(scenario_id %in% c("s0020", "s0021", "s0023", "s0024"))%>%
+  filter(scenario_id %in% c("s0020", "s0035", "s0036", "s0037"))%>%
   ggplot(aes(scenario_id, prop*100, fill = as.factor(tier)))+
   geom_col(position="dodge")+
   labs(x= "Scenario", y = "Percentage of Demand Units", fill = "Tier")+
   theme_bw()+
   scale_x_discrete(labels = c(
     "s0020" = "Baseline",
-    "s0021" = "Current operations \n without TUCPs", 
-    "s0023" = "2024 USBR BiOps \n without TUCPs",
-    "s0024" = "2024 USBR BiOps"))
+    "s0035" = "Prioritize human health \n and safety needs", 
+    "s0036" = "Prioritize 70% of \n community water demands",
+    "s0037" = "Prioritize all community \n water demands"))
 
 
 read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
@@ -96,7 +96,7 @@ read.csv("Outputs/Tier summaries/all_scenarios_tier_matrix_alt5.csv")%>%
 ```{r}
 folder_path <- "Outputs/Monthly demand met/"  
 
-scenarios <- c("s0020", "s0021", "s0023", "s0024")
+scenarios <- c("s0020", "s0035", "s0036", "s0037")
 dwucs_to_keep <- c("20_NU1", "NAPA", "90_PU", "MWD")
 
 all_data <- map_dfr(scenarios, function(scenario) {
@@ -131,7 +131,7 @@ all_data%>%
   filter(scenario_id == "s0020")%>%
   mutate(dwuc = factor(dwuc, 
                        levels = c("20_NU1", "90_PU", "MWD", "NAPA"),
-                       labels = c("Davis / Woodland", "Huron / Avenal / Coalinga", "Metropolitan", "Napa / St. Helena / Calistoga"))) %>%
+                       labels = c("20_NU1 (Davis, Woodland)", "90_PU (Huron, Avenal, Coalinga)", "MWD (Metropolitan)", "NAPA (Napa, St. Helena, Calistoga)"))) %>%
   ggplot(aes(x = month, y = monthly_avg)) +
   geom_point(color = "steelblue")+
   geom_line(color = "steelblue", linewidth = 0.7) +
