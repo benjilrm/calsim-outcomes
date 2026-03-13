@@ -1,0 +1,146 @@
+
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+    library(tidyverse)
+    library(readxl)
+    library(here)
+    library(sf)
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+
+wgs_crs = 4326
+ca_crs = 3310
+```
+
+# Import and process data
+
+Load in list of demand units relevant to surface water in CalSim
+```{r}
+calsim_dus = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
+  rename(demand_unit = 1)%>%
+  select(1)%>%
+  mutate(demand_unit = str_squish(demand_unit))
+```
+
+
+
+Demand unit key--provided by Kristin via email on 26/2/2026.
+Wrangle so we have two columns. One row per PWSID, with 2nd column indicating demand unit it pertains to. 
+```{r}
+du_key = read_excel("Inputs/Demand unit key/Systems_served_by_DU_pwsid.xlsx")%>%
+  rename(id = 1)%>%
+  mutate(id = str_trim(str_replace_all(id, "[\r\n]+", " ")),
+           is_du = ifelse(startsWith(id, "CA") | grepl("San Gorgonio|Upper San Gabriel|Orange County", id), 0, 1),
+         demand_unit = if_else(is_du == 1, id, NA))%>%
+  fill(demand_unit, .direction = "down")%>%
+  filter(is_du != 1)%>%
+  rename(pwsid = 1)%>%
+  select(-is_du)%>%
+  separate_rows(demand_unit, sep = ";\\s*")%>%
+  filter(demand_unit %in% calsim_dus$demand_unit)%>%
+  mutate(demand_unit = case_when(
+    pwsid == "CA5010017" ~ "71_NU",
+    pwsid == "CA4810701" ~ "TVAFB",
+    pwsid == "CA1910001" ~ "ESB415",
+    T ~ demand_unit))
+
+du_key
+```
+
+```{r}
+du_key%>%
+  select(demand_unit)%>%
+  unique()%>%
+  filter(!demand_unit %in% joined$demand_unit)
+
+network_data%>%
+  filter(pwsid %in% c(du_key%>%filter(grepl("72_NU|71_NU", demand_unit))%>%pull(pwsid)))
+```
+
+Load in most recent version of network data (which has system lat/longs). Filter for only these relevant system variables
+```{r}
+network_data = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260309_network_joined.csv")%>%
+  select(pwsid, system_lat, system_lon, pop_served)%>%
+  unique()
+```
+
+Join our demand unit key to the system variables. Filter for the largest system (based on population served) within each demand unit, and assign that system's lat/longs to that demand unit. There are a few cases where a system is the largest system in two or more demand units, causing multiple demand units to get assigned the same lat/long. So we jitter all points 800ft just so the points aren't on top of each other.
+```{r}
+joined = du_key%>%
+  inner_join(., network_data, by = "pwsid")%>%
+  unique()%>%
+  group_by(demand_unit)%>%
+  filter(pop_served == max(pop_served, na.rm = T))%>%
+  rename(lat = system_lat, lon = system_lon, pwsid_coords_from = pwsid)%>%
+  select(demand_unit, lat, lon, pwsid_coords_from)%>%
+  st_as_sf(., coords = c("lon", "lat"), crs = wgs_crs)%>%
+  st_transform(ca_crs)%>%
+  st_jitter(., amount = 500)%>%
+  st_transform(wgs_crs)%>%
+  mutate(lon = st_coordinates(geometry)[,1], lat = st_coordinates(geometry)[,2])%>%
+  st_drop_geometry()
+
+joined%>%
+  filter(demand_unit == "26S_NU1")
+```
+Export
+```{r}
+write.csv(joined, "Data/Outputs/20260305_demand_unit_lat_longs.csv")
+```
+
+
+
+
+
+```{r}
+network_data = network_data%>%
+  select(system_name, pwsid, calsim_demandunit, pop_served, system_lat, system_lon)%>%
+  unique()%>%
+  filter(!calsim_demandunit %in% c("Out of CalSim", "Out of Calsim"))%>%
+  arrange(system_name)%>%
+  mutate(calsim_demandunit = str_trim(str_replace_all(calsim_demandunit, "[\r\n]+", " ")))%>%
+  separate_rows(calsim_demandunit, sep = ";\\s*")
+
+gw_dus = read_excel("Inputs/Demand unit key/SystemswithinCalSim_groundwater.xlsx")%>%
+  select(pwsid, demand_unit_final)%>%
+  rename(du_gw = 2)%>%
+  unique()
+
+master_key = network_data%>%
+  left_join(., gw_dus, by = "pwsid")%>%
+  mutate(calsim_demandunit = ifelse(calsim_demandunit == "PWSID" & !is.na(du_gw), du_gw, calsim_demandunit))%>%
+  left_join(., du_key%>%rename(du_sw = demand_unit), by = "pwsid")%>%
+  mutate(calsim_demandunit = ifelse(calsim_demandunit == "PWSID" & !is.na(du_sw), du_sw, calsim_demandunit))%>%
+  unique()%>%
+  arrange(pwsid)
+  
+gw_du_overwrite = master_key%>%
+  filter(du_gw != calsim_demandunit & !is.na(du_gw))%>%
+  mutate(calsim_demandunit = du_gw)
+sw_du_overwrite = master_key %>%
+  filter(du_sw != calsim_demandunit & !is.na(du_sw)) %>%
+  mutate(calsim_demandunit = du_sw)
+  
+full_master_key = bind_rows(master_key, gw_du_overwrite, sw_du_overwrite) %>%
+  select(system_name:system_lon)%>%
+  unique()%>%
+  arrange(pwsid)
+
+rm(gw_dus, master_key, gw_du_overwrite, sw_du_overwrite)
+```
+
+
+```{r}
+calsim_dus%>%
+  filter(!demand_unit %in% full_master_key$calsim_demandunit)
+```
+
