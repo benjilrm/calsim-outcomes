@@ -50,32 +50,17 @@ du_key = read_excel("Inputs/Demand unit key/Systems_served_by_DU_pwsid.xlsx")%>%
     pwsid == "CA4810701" ~ "TVAFB",
     pwsid == "CA1910001" ~ "ESB415",
     T ~ demand_unit))
-
-du_key%>%
-  filter(demand_unit == "71_NU")
-```
-
-```{r}
-du_key%>%
-  select(demand_unit)%>%
-  unique()%>%
-  filter(!demand_unit %in% joined$demand_unit)
-
-network_data%>%
-  filter(pwsid %in% c(du_key%>%filter(grepl("72_NU|71_NU", demand_unit))%>%pull(pwsid)))
 ```
 
 Load in most recent version of network data (which has system lat/longs). Filter for only these relevant system variables
 ```{r}
 network_data = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260309_network_joined.csv")
-  select(pwsid, system_lat, system_lon, pop_served)%>%
-  unique()
 ```
 
-Join our demand unit key to the system variables. Filter for the largest system (based on population served) within each demand unit, and assign that system's lat/longs to that demand unit. There are a few cases where a system is the largest system in two or more demand units, causing multiple demand units to get assigned the same lat/long. So we jitter all points 800ft just so the points aren't on top of each other.
-```{r}
+
+```{r, eval = T}
 joined = du_key%>%
-  inner_join(., network_data, by = "pwsid")%>%
+  inner_join(., network_data%>%select(pwsid, system_lat, system_lon, pop_served)%>%unique(), by = "pwsid")%>%
   unique()%>%
   group_by(demand_unit)%>%
   filter(pop_served == max(pop_served, na.rm = T))%>%
@@ -87,9 +72,6 @@ joined = du_key%>%
   st_transform(wgs_crs)%>%
   mutate(lon = st_coordinates(geometry)[,1], lat = st_coordinates(geometry)[,2])%>%
   st_drop_geometry()
-
-joined%>%
-  filter(demand_unit == "26S_NU1")
 ```
 
 
@@ -135,6 +117,27 @@ rm(gw_dus, master_key, gw_du_overwrite, sw_du_overwrite)
 
 full_master_key
 ```
+
+```{r}
+sabl = st_read("Inputs/SABL/System_Area_Boundary_Layer.shp")%>%
+  st_centroid()%>%
+  filter(BOUNDARY_T == "Water Service Area")%>%
+  rename(pwsid = 1, sabl_system_name = 4)%>%
+  select(pwsid, sabl_system_name)%>%
+  st_transform(wgs_crs)%>%
+  mutate(lon_sabl = st_coordinates(geometry)[,1], 
+         lat_sabl = st_coordinates(geometry)[,2])%>%
+  st_drop_geometry()
+
+full_master_key%>%
+  left_join(., sabl, by = "pwsid")%>%
+  mutate(system_name = ifelse(is.na(system_name), sabl_system_name, system_name),
+         system_lat = ifelse(is.na(system_lat), lat_sabl, system_lat),
+         system_lon = ifelse(is.na(system_lon), lon_sabl, system_lon))%>%
+  select(-c(sabl_system_name:lat_sabl))%>%
+  filter(is.na(system_name))
+```
+
 
 
 ```{r}
