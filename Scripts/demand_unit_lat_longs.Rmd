@@ -114,28 +114,35 @@ full_master_key = bind_rows(master_key, gw_du_overwrite, sw_du_overwrite) %>%
          in_network_data = ifelse(pwsid %in% network_data$pwsid, 1, 0))
 
 rm(gw_dus, master_key, gw_du_overwrite, sw_du_overwrite)
-
-full_master_key
 ```
 
 ```{r}
 sabl = st_read("Inputs/SABL/System_Area_Boundary_Layer.shp")%>%
   st_centroid()%>%
-  filter(BOUNDARY_T == "Water Service Area")%>%
   rename(pwsid = 1, sabl_system_name = 4)%>%
+  group_by(pwsid) %>%
+  slice_max(BOUNDARY_T == "Water Service Area", n = 1)%>%
   select(pwsid, sabl_system_name)%>%
   st_transform(wgs_crs)%>%
   mutate(lon_sabl = st_coordinates(geometry)[,1], 
          lat_sabl = st_coordinates(geometry)[,2])%>%
   st_drop_geometry()
 
-full_master_key%>%
+pop_sdwis = read_excel("Inputs/SABL/EPASDWIS_Q12025_allactiveCAPWS.xlsx", skip = 3)%>%
+  rename(pwsid = 1, system_name_sdwis = 2, pop_served_sdwis = 6)%>%
+  select(1, 2, 6)
+
+
+full_master_key = full_master_key%>%
   left_join(., sabl, by = "pwsid")%>%
   mutate(system_name = ifelse(is.na(system_name), sabl_system_name, system_name),
          system_lat = ifelse(is.na(system_lat), lat_sabl, system_lat),
          system_lon = ifelse(is.na(system_lon), lon_sabl, system_lon))%>%
   select(-c(sabl_system_name:lat_sabl))%>%
-  filter(is.na(system_name))
+  left_join(., pop_sdwis, by = "pwsid")%>%
+  mutate(system_name = ifelse(is.na(system_name), system_name_sdwis, system_name),
+         pop_served = ifelse(is.na(pop_served), pop_served_sdwis, pop_served))%>%
+  select(-c(system_name_sdwis:pop_served_sdwis))
 ```
 
 
