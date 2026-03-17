@@ -76,7 +76,7 @@ joined = du_key%>%
 
 
 ```{r}
-network_data = network_data%>%
+network_data_filtered = network_data%>%
   select(system_name, pwsid, calsim_demandunit, pop_served, system_lat, system_lon)%>%
   unique()%>%
   filter(!calsim_demandunit %in% c("Out of CalSim", "Out of Calsim"))%>%
@@ -90,7 +90,7 @@ gw_dus = read_excel("Inputs/Demand unit key/SystemswithinCalSim_groundwater.xlsx
   unique()%>%
   mutate(gw_unit = 1)
 
-master_key = network_data%>%
+master_key = network_data_filtered%>%
   full_join(., gw_dus, by = "pwsid")%>%
   mutate(calsim_demandunit = ifelse((calsim_demandunit == "PWSID" | is.na(calsim_demandunit)) & !is.na(du_gw), du_gw, calsim_demandunit))%>%
   full_join(., du_key%>%rename(du_sw = demand_unit), by = "pwsid")%>%
