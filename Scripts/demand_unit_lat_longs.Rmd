@@ -28,7 +28,8 @@ Load in list of demand units relevant to surface water in CalSim
 calsim_dus = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
   rename(demand_unit = 1)%>%
   select(1)%>%
-  mutate(demand_unit = str_squish(demand_unit))
+  mutate(demand_unit = str_squish(demand_unit))%>%
+  filter(!demand_unit %in% c("71_NU", "72_NU"))
 ```
 
 Demand unit key--provided by Kristin via email on 26/2/2026.
@@ -46,7 +47,7 @@ du_key = read_excel("Inputs/Demand unit key/Systems_served_by_DU_pwsid.xlsx")%>%
   separate_rows(demand_unit, sep = ";\\s*")%>%
   filter(demand_unit %in% calsim_dus$demand_unit)%>%
   mutate(demand_unit = case_when(
-    pwsid == "CA5010017" ~ "71_NU",
+    #pwsid == "CA5010017" ~ "71_NU",
     pwsid == "CA4810701" ~ "TVAFB",
     pwsid == "CA1910001" ~ "ESB415",
     T ~ demand_unit))
@@ -56,24 +57,6 @@ Load in most recent version of network data (which has system lat/longs). Filter
 ```{r}
 network_data = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260309_network_joined.csv")
 ```
-
-
-```{r, eval = T}
-joined = du_key%>%
-  inner_join(., network_data%>%select(pwsid, system_lat, system_lon, pop_served)%>%unique(), by = "pwsid")%>%
-  unique()%>%
-  group_by(demand_unit)%>%
-  filter(pop_served == max(pop_served, na.rm = T))%>%
-  rename(lat = system_lat, lon = system_lon, pwsid_coords_from = pwsid)%>%
-  select(demand_unit, lat, lon, pwsid_coords_from)%>%
-  st_as_sf(., coords = c("lon", "lat"), crs = wgs_crs)%>%
-  st_transform(ca_crs)%>%
-  st_jitter(., amount = 500)%>%
-  st_transform(wgs_crs)%>%
-  mutate(lon = st_coordinates(geometry)[,1], lat = st_coordinates(geometry)[,2])%>%
-  st_drop_geometry()
-```
-
 
 ```{r}
 network_data_filtered = network_data%>%
@@ -133,7 +116,7 @@ sabl = sabl_raw%>%
 sabl_filtered = sabl_raw%>%
   filter(pwsid %in% network_data$pwsid)
 
-st_write(sabl_filtered, "Outputs/SABL/sabl_processed.shp", delete_dsn = T)
+#st_write(sabl_filtered, "Outputs/SABL/sabl_processed.shp", delete_dsn = T)
 ```
 
 
@@ -176,6 +159,6 @@ lat_longs = full_master_key%>%
 
 Export
 ```{r}
-write.csv(full_master_key, "Outputs/Demand unit to PWSID keys/20260316_demand_unit_pwsid_master_list.csv", row.names = F)
-write.csv(lat_longs, "Outputs/Demand unit to PWSID keys/20260316_demand_unit_lat_longs.csv", row.names = F)
+write.csv(full_master_key, "Outputs/Demand unit to PWSID keys/20260324_demand_unit_pwsid_master_list.csv", row.names = F)
+write.csv(lat_longs, "Outputs/Demand unit to PWSID keys/20260324_demand_unit_lat_longs.csv", row.names = F)
 ```
