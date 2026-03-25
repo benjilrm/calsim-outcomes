@@ -32,7 +32,7 @@ calsim_dus = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
   filter(!demand_unit %in% c("71_NU", "72_NU"))
 ```
 
-Demand unit key--provided by Kristin via email on 26/2/2026.
+Surface water demand unit key--provided by Kristin via email on 26/2/2026.
 Wrangle so we have two columns. One row per PWSID, with 2nd column indicating demand unit it pertains to. 
 ```{r}
 du_key = read_excel("Inputs/Demand unit key/Systems_served_by_DU_pwsid.xlsx")%>%
@@ -53,11 +53,55 @@ du_key = read_excel("Inputs/Demand unit key/Systems_served_by_DU_pwsid.xlsx")%>%
     T ~ demand_unit))
 ```
 
+GW-demand unit key
+```{r}
+gw_dus = read_excel("Inputs/Demand unit key/SystemswithinCalSim_groundwater.xlsx")%>%
+  select(pwsid, demand_unit_final)%>%
+  rename(du_gw = 2)%>%
+  unique()%>%
+  mutate(gw_unit = 1)
+```
+
+SABL boundary layers (in order to get the system name and location from centroid for any systems that aren't in the network dataset)
+```{r}
+sabl_raw = st_read("Inputs/SABL/System_Area_Boundary_Layer.shp")%>%
+  rename(pwsid = 1, sabl_system_name = 4)%>%
+  group_by(pwsid) %>%
+  slice_max(BOUNDARY_T == "Water Service Area", n = 1)
+  select(pwsid, sabl_system_name)
+
+sabl = sabl_raw%>%
+  st_centroid()%>%
+  st_transform(wgs_crs)%>%
+  mutate(lon_sabl = st_coordinates(geometry)[,1], 
+         lat_sabl = st_coordinates(geometry)[,2])%>%
+  st_drop_geometry()
+
+sabl_filtered = sabl_raw%>%
+  filter(pwsid %in% network_data$pwsid)
+
+#st_write(sabl_filtered, "Outputs/SABL/sabl_processed.shp", delete_dsn = T)
+
+gw_systems = sabl_raw%>%
+  st_centroid()%>%
+  filter(STATE_CLAS == "COMMUNITY" & !pwsid %in% network_data$pwsid)
+  
+st_write(gw_systems, "Outputs/GW systems/gw_systems.shp", delete_dsn = T)
+```
+
+Population served by system from SDWIS (for any systems that aren't in the network dataset)
+```{r}
+pop_sdwis = read_excel("Inputs/SABL/EPASDWIS_Q12025_allactiveCAPWS.xlsx", skip = 3)%>%
+  rename(pwsid = 1, system_name_sdwis = 2, pop_served_sdwis = 6)%>%
+  select(1, 2, 6)
+```
+
 Load in most recent version of network data (which has system lat/longs). Filter for only these relevant system variables
 ```{r}
 network_data = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260309_network_joined.csv")
 ```
 
+Filter out demand units not in CalSim, and clean up/split up other demand units
 ```{r}
 network_data_filtered = network_data%>%
   select(system_name, pwsid, calsim_demandunit, pop_served, system_lat, system_lon)%>%
@@ -66,13 +110,10 @@ network_data_filtered = network_data%>%
   arrange(system_name)%>%
   mutate(calsim_demandunit = str_trim(str_replace_all(calsim_demandunit, "[\r\n]+", " ")))%>%
   separate_rows(calsim_demandunit, sep = ";\\s*")
+```
 
-gw_dus = read_excel("Inputs/Demand unit key/SystemswithinCalSim_groundwater.xlsx")%>%
-  select(pwsid, demand_unit_final)%>%
-  rename(du_gw = 2)%>%
-  unique()%>%
-  mutate(gw_unit = 1)
-
+Join network data with SW and GW demand unit keys in order to get master list
+```{r}
 master_key = network_data_filtered%>%
   full_join(., gw_dus, by = "pwsid")%>%
   mutate(calsim_demandunit = ifelse((calsim_demandunit == "PWSID" | is.na(calsim_demandunit)) & !is.na(du_gw), du_gw, calsim_demandunit))%>%
@@ -99,34 +140,7 @@ full_master_key = bind_rows(master_key, gw_du_overwrite, sw_du_overwrite) %>%
 rm(gw_dus, master_key, gw_du_overwrite, sw_du_overwrite)
 ```
 
-```{r}
-sabl_raw = st_read("Inputs/SABL/System_Area_Boundary_Layer.shp")%>%
-  rename(pwsid = 1, sabl_system_name = 4)%>%
-  group_by(pwsid) %>%
-  slice_max(BOUNDARY_T == "Water Service Area", n = 1)%>%
-  select(pwsid, sabl_system_name)
-
-sabl = sabl_raw%>%
-  st_centroid()%>%
-  st_transform(wgs_crs)%>%
-  mutate(lon_sabl = st_coordinates(geometry)[,1], 
-         lat_sabl = st_coordinates(geometry)[,2])%>%
-  st_drop_geometry()
-
-sabl_filtered = sabl_raw%>%
-  filter(pwsid %in% network_data$pwsid)
-
-#st_write(sabl_filtered, "Outputs/SABL/sabl_processed.shp", delete_dsn = T)
-```
-
-
-```{r}
-pop_sdwis = read_excel("Inputs/SABL/EPASDWIS_Q12025_allactiveCAPWS.xlsx", skip = 3)%>%
-  rename(pwsid = 1, system_name_sdwis = 2, pop_served_sdwis = 6)%>%
-  select(1, 2, 6)
-```
-
-
+Fill in missing information from SABL and SDWIS datasets
 ```{r}
 full_master_key = full_master_key%>%
   left_join(., sabl, by = "pwsid")%>%
@@ -140,8 +154,7 @@ full_master_key = full_master_key%>%
   select(-c(system_name_sdwis:pop_served_sdwis))
 ```
 
-
-
+Pick one lat/long per demand unit based on the system with the greatest population served
 ```{r}
 lat_longs = full_master_key%>%
   group_by(calsim_demandunit)%>%
