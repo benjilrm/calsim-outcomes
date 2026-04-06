@@ -1,0 +1,130 @@
+
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+    library(tidyverse)
+    library(readxl)
+    library(here)
+    library(sf)
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+
+options(scipen = 999)
+```
+
+# Import and process data
+```{r}
+network_df = read_excel("C:/Users/benji/Downloads/Network data with updated calsim demand assignments - April 3rd.xlsx")%>%
+  mutate(average_source_usage = average_source_usage / 100)
+```
+
+```{r}
+end_nodes <- network_df %>%
+  filter(calsim_demandunit != "PWSID") %>%
+  select(pwsid, traced_du = calsim_demandunit, average_source_usage)%>%
+  group_by(pwsid, traced_du)%>%
+  reframe(average_source_usage = sum(average_source_usage))
+```
+
+
+```{r}
+# Step 1: Build PWSID → DU mappings (terminal nodes)
+du_mappings <- network_df %>%
+  filter(calsim_demandunit != "PWSID") %>%
+  select(pwsid, source = calsim_demandunit, volume = average_source_usage)
+
+# Step 2: Build PWSID → PWSID mappings (intermediate nodes)
+pwsid_mappings <- network_df %>%
+  filter(calsim_demandunit == "PWSID") %>%
+  select(pwsid, source = source_name, volume = average_source_usage)
+
+# Step 3: Combine and calculate fractions
+complete_map <- bind_rows(du_mappings, pwsid_mappings) %>%
+  group_by(pwsid, source) %>%
+  summarise(volume = sum(volume), .groups = "drop") %>%
+  group_by(pwsid) %>%
+  mutate(fraction = volume / sum(volume)) %>%
+  ungroup()
+
+# Step 4: Create lookup list
+complete_list <- complete_map %>%
+  group_by(pwsid) %>%
+  group_split() %>%
+  setNames(map_chr(., ~ first(.x$pwsid))) %>%
+  map(~ select(.x, source, fraction))
+
+# Step 5: Recursive trace function
+trace_to_dus <- function(source_name, volume = 1, complete_list, visited = c()) {
+  # Prevent infinite loops from circular dependencies
+  if (source_name %in% visited) {
+    warning(paste("Circular reference detected:", source_name))
+    return(tibble(traced_du = source_name, adjusted_volume = volume))
+  }
+  
+  # If this source is a PWSID that can be decomposed
+  if (source_name %in% names(complete_list)) {
+    components <- complete_list[[source_name]]
+    
+    results <- map2_dfr(
+      components$source,
+      components$fraction,
+      ~ trace_to_dus(.x, volume * .y, complete_list, c(visited, source_name))
+    )
+    return(results)
+  } else {
+    # Terminal - this is a real demand unit
+    return(tibble(traced_du = source_name, adjusted_volume = volume))
+  }
+}
+
+# Step 6: Apply to all purchases
+purchases <- network_df %>%
+  filter(calsim_demandunit == "PWSID") %>%
+  select(pwsid, source_name, average_source_usage)
+
+traced_results <- purchases %>%
+  rowwise() %>%
+  mutate(
+    traced = list(trace_to_dus(source_name, average_source_usage, complete_list))) %>%
+  unnest(traced) %>%
+  select(pwsid, traced_du, adjusted_volume) %>%
+  group_by(pwsid, traced_du) %>%
+  summarise(average_source_usage = sum(adjusted_volume), .groups = "drop")
+```
+
+
+```{r}
+final = rbind(traced_results, end_nodes)%>%
+  mutate(average_source_usage = average_source_usage *100)%>%
+  group_by(pwsid, traced_du)%>%
+  reframe(average_source_usage = sum(average_source_usage))
+
+final%>%
+  filter(pwsid == "CA0110003")
+```
+
+
+```{r}
+network_df%>%
+  mutate(average_source_usage = average_source_usage * 100)%>%
+  filter(pwsid %in% c("CA0110003", "CA0110010"))%>%
+  select(pwsid, source_name, average_source_usage, calsim_demandunit)
+```
+
+
+
+
+Export
+```{r}
+write.csv(final, "Outputs/Static demand/20260406_traced_demand_units.csv", row.names = F)
+```
+
+
