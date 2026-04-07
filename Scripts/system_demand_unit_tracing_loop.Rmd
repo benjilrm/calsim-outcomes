@@ -23,12 +23,13 @@ options(scipen = 999)
 # Import network data
 ```{r}
 network_df = read_excel("C:/Users/benji/Downloads/Network data with updated calsim demand assignments - April 3rd.xlsx")%>%
-  mutate(average_source_usage = average_source_usage / 100)
+  mutate(average_source_usage = average_source_usage / 100,
+         calsim_demandunit = str_squish(calsim_demandunit))
 ```
 
 # Process data
 
-Create new rows to fill in the remainder (to hit 100% volume) for each system
+Create new rows representing GW deliveries to fill in the remainder (to hit 100% volume) for each system
 ```{r}
 # Combine with original data
 network_df = bind_rows(
@@ -45,7 +46,7 @@ network_df = bind_rows(
 
 # Demand unit tracing
 
-Create a dataframe of 'end nodes' that have a demand unit (and therefre don't need to be traced back further)
+Create a dataframe of 'end nodes' that have a specified demand unit (and therefore don't need to be traced back further)
 ```{r}
 end_nodes <- network_df %>%
   filter(calsim_demandunit != "PWSID") %>%
@@ -122,7 +123,7 @@ final = rbind(traced_results, end_nodes)%>%
   reframe(average_source_usage = sum(average_source_usage))
 ```
 
-# Diagnostics
+## Diagnostics
 
 Do some manual tracing to make sure everything was calculated correctly
 ```{r}
@@ -137,9 +138,136 @@ network_df%>%
   select(pwsid, source_name, average_source_usage, calsim_demandunit)
 ```
 
-# Export
+## Filter out GW and 'Out of CalSim' demand units
 ```{r}
-write.csv(final, "Outputs/Static demand/20260406_traced_demand_units.csv", row.names = F)
+traced_dus = final%>%
+  filter(!traced_du %in% c("gw", "Out of CalSim", "Out of Calsim"))
 ```
 
+
+
+## Separate combined demand units
+
+In many cases, multiple demand units will be listed, separate by a semicolon. In these cases, we want to split them up and distribute the volume between them proportional to their historical deliveries. 
+
+So first, let's import the annual delivery data from CalSim (baseline scenario s0020) and calculate the mean annual delivery per demand unit. 
+```{r}
+historical_deliveries = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+  select(dwuc, annual_delivery)%>%
+  group_by(dwuc)%>%
+  reframe(mean_annual_delivery = mean(annual_delivery))
+```
+
+```{r}
+extract_scenario_id = function(filename) {
+  str_extract(filename, "s\\d+") %>% tolower()}
+
+file_path = "C:/Users/benji/Downloads/s0020_DCRadjBL_2020LU_wTUCP_DELIVERIES.csv"
+
+scenario_id = extract_scenario_id(basename(file_path))
+  
+data = read.csv(file_path) %>%
+    mutate(row_id = row_number())%>%
+    pivot_longer(cols = -row_id,
+                 names_to = "col_position",
+                 values_to = "value")%>%
+    pivot_wider(
+      names_from = row_id,
+      values_from = value)%>%
+    rename(
+      col_position = 1,
+      delivery_id = 2,    
+      units = 7)
+  
+dates = data%>%
+    slice(1) %>%  
+    select(8:ncol(.)) %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "date_id",
+      values_to = "date")
+  
+historical_deliveries = data%>%
+    filter(units == "TAF" & delivery_id %in% crosswalk$delivery_id)%>%
+    select(-c(1,3:units))%>%
+    pivot_longer(
+      cols = -delivery_id,
+      names_to = "date_id",
+      values_to = "delivery_taf")%>%
+    left_join(dates, by = "date_id")%>%
+    mutate(scenario_id = scenario_id,
+           delivery_taf = as.numeric(ifelse(delivery_taf == "", NA, delivery_taf)),
+           year = year(date))%>%
+    select(scenario_id, delivery_id, year, delivery_taf) %>%
+    left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")%>%
+    group_by(dwuc, year)%>%
+    reframe(annual_delivery_taf = sum(delivery_taf))%>%
+    group_by(dwuc)%>%
+    reframe(mean_annual_delivery_taf = mean(annual_delivery_taf))
+```
+
+Now, we can separate out any rows with semicolons in the demand unit. 
+```{r}
+traced_dus_split = traced_dus%>%
+  mutate(traced_du = str_replace_all(traced_du, "[\n]+", ""),
+         split = ifelse(grepl(";", traced_du), 1, 0))%>%
+  separate_rows(traced_du, sep = ";\\s*")%>%
+  left_join(historical_deliveries, by = c("traced_du" = "dwuc"))%>%
+  group_by(pwsid) %>%
+  mutate(total_deliveries = sum(mean_annual_delivery_taf))%>%
+  ungroup()%>%
+  mutate(ratio = mean_annual_delivery_taf / total_deliveries,
+    average_source_usage = case_when(
+      traced_du == "25_PA1" & split == 1 ~ average_source_usage * 0.77,
+      traced_du == "SIDSH" & split == 1 ~ average_source_usage * 0.23,
+      split == 1 & !is.na(mean_annual_delivery_taf) ~ average_source_usage*ratio, 
+      T ~ average_source_usage))
+```
+
+
+
+## Export
+```{r}
+write.csv(traced_dus_split, "Outputs/Static demand/20260407_traced_demand_units.csv", row.names = F)
+```
+
+
+# Calculating demand by demand unit
+
+Great, so now, for each system, we know the distribution of how much water they get from different demand units. 
+So now, in order to calculate total demand by demand unit, we can join in a dataset that Jenny calculated of demand (in AF) per year per system. 
+
+You can find Jenny's github for these calculations [here](https://github.com/jenrempel/coeqwal_demand/tree/main). I am drawing upon 'du_demand_final_123025.csv' in the 'processed data' folder. 
+
+```{r}
+demand_by_system = read.csv("C:/Users/benji/Downloads/coeqwal_demand-main/coeqwal_demand-main/processed_data/du_demand_final_123025.csv")%>%
+  select(pwsid, scenario_baseline_pop_total_demand_af_per_yr_system_total)%>%
+  rename(demand_system_af = 2)%>%
+  unique()
+```
+
+```{r}
+demand_by_du = left_join(traced_dus_split, demand_by_system, by = "pwsid")%>%
+  mutate(demand_du =  demand_system_af * average_source_usage/100)%>%
+  group_by(traced_du)%>%
+  reframe(demand_du_taf = sum(demand_du)/1000)%>%
+  arrange(traced_du)
+```
+
+## Diagnostics
+```{r}
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260407_crosswalk_processed.csv")
+
+crosswalk%>%
+  filter(!dwuc %in% demand_by_du$traced_du)
+```
+
+
+```{r}
+network_df%>%
+  filter(pwsid %in% c("CA3410023", "CA3410033", "CA3400156", "CA3410020"))%>%
+  select(system_name, pwsid, source_name, calsim_demandunit)
+  filter(calsim_demandunit %in% c("26S_NU3", "ESB415"))%>%
+    select()
+```
 
