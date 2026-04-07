@@ -26,7 +26,10 @@ Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BY
 ```{r}
 crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
   rename(dwuc = 1, demand_id = 2, delivery_id = 3)%>%
-  mutate(dwuc = str_replace_all(dwuc, "[\n]+", ""))%>%
+  mutate(dwuc = str_replace_all(dwuc, "[\n]+", ""),
+         delivery_id = case_when(
+           delivery_id == "D_POSC015_CSPSO" ~ "D_PSC015_CSPSO",
+           T ~ delivery_id))%>%
   filter(!dwuc %in% c("71_NU", "72_NU"))
 
 #write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260407_crosswalk_processed.csv", row.names = T)
@@ -46,14 +49,13 @@ extract_scenario_id = function(filename) {
 
 ## Process individual file
 
-Core function to process either a demand or delivery file. 
+Core function to process either a delivery file. 
 
-Cleans up header rows, extracts values for demand or delivery (in TAF), and pivots longer so we have 1 row per demand unit per month (rather than 1 column per demand unit, which is how the raw data is structured). Filters for only demand units whose demand ID or delivery ID is in our crosswalk dataset
+Cleans up header rows, extracts values for delivery (in TAF), and pivots longer so we have 1 row per demand unit per month (rather than 1 column per demand unit, which is how the raw data is structured). Filters for only demand units whose delivery ID is in our crosswalk dataset
 
-Returns a processed dataset of either demand or delivery values by demand unit and month
+Returns a processed dataset of delivery values by demand unit and month
 ```{r}
-process_file = function(file_path, crosswalk, data_type = c("demand", "delivery")) {
-  data_type = match.arg(data_type)
+process_file = function(file_path, crosswalk) {
   scenario_id = extract_scenario_id(basename(file_path))
   
   # Read and clean the data
@@ -67,7 +69,7 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
       values_from = value)%>%
     rename(
       col_position = 1,
-      demand_unit_id = 2,    
+      delivery_id = 2,    
       units = 7)
   
   dates = data%>%
@@ -78,54 +80,35 @@ process_file = function(file_path, crosswalk, data_type = c("demand", "delivery"
       names_to = "date_id",
       values_to = "date")
   
-  # Filter for only demand units whose demand ID or delivery ID is in our crosswalk dataset
-  # Convert any blank values to NA
-  id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
-  value_col = ifelse(data_type == "demand", "demand_taf", "delivery_taf")
-  
   processed = data%>%
-    filter(units == "TAF" & demand_unit_id %in% crosswalk[[id_col]])%>%
+    filter(units == "TAF" & delivery_id %in% crosswalk$delivery_id)%>%
     select(-c(1,3:units))%>%
     pivot_longer(
-      cols = -demand_unit_id,
+      cols = -delivery_id,
       names_to = "date_id",
-      values_to = "value_taf")%>%
+      values_to = "delivery_taf")%>%
     left_join(dates, by = "date_id")%>%
-    select(-date_id)%>%
     mutate(scenario_id = scenario_id,
-           value_taf = as.numeric(ifelse(value_taf == "", NA, value_taf)))
-  
-  # Rename columns based on data type and return processed dataset
-  if (data_type == "demand") {
-    processed = processed %>%
-      rename(demand_id = demand_unit_id, demand_taf = value_taf) %>%
-      select(scenario_id, demand_id, date, demand_taf) %>%
-      left_join(crosswalk%>%select(dwuc, demand_id), by = "demand_id")} 
-  else {
-    processed = processed %>%
-      rename(delivery_id = demand_unit_id, delivery_taf = value_taf) %>%
-      select(scenario_id, delivery_id, date, delivery_taf) %>%
-      left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")}
-  
-  # Get the actual column name that was created
-  #actual_id_col = ifelse(data_type == "demand", "demand_id", "delivery_id")
-  #actual_value_col = ifelse(data_type == "demand", "demand_taf", "delivery_taf")
-  
+           delivery_taf = as.numeric(ifelse(delivery_taf == "", NA, delivery_taf)),
+           year = year(date))%>%
+    select(scenario_id, delivery_id, date, year, delivery_taf) %>%
+    left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")
+
   # Create list of missing units
   not_present = crosswalk %>%
-    select(all_of(id_col)) %>%
-    distinct() %>%
-    mutate(status = ifelse(!.data[[id_col]] %in% processed[[id_col]], 
+    select(delivery_id) %>%
+    distinct()%>%
+    mutate(status = ifelse(!.data$delivery_id %in% processed$delivery_id, 
                            "Not in data", NA)) %>%
     filter(!is.na(status))
   
   # Check if all values are either 0 or NA
   all_blank_or_all_zero = processed %>%
-    group_by(.data[[id_col]]) %>%
+    group_by(.data$delivery_id) %>%
     reframe(
       status = case_when(
-        all(is.na(.data[[value_col]])) ~ "All blank", 
-        all(.data[[value_col]] == 0, na.rm = T) ~ "All zero", 
+        all(is.na(.data$delivery_taf)) ~ "All blank", 
+        all(.data$delivery_taf == 0, na.rm = T) ~ "All zero", 
         T ~ NA)) %>%
     ungroup() %>%
     filter(!is.na(status))
@@ -151,18 +134,14 @@ Aggregates demand and delivery by year for each demand unit and calculates annua
 
 Calculates tiers based on annual % of demand met
 ```{r}
-process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswalk, output_base = "Outputs") {
+process_scenario = function(scenario_id, delivery_folder, crosswalk, output_base = "Outputs") {
   cat("Processing scenario:", scenario_id, "\n")
   
   # Find files for this scenario
-  demand_files = list.files(demand_folder, pattern = paste0(scenario_id, ".*\\.csv$"), full.names = TRUE)
   delivery_files = list.files(delivery_folder, pattern = paste0(scenario_id, ".*\\.csv$"), full.names = TRUE)
   
   # Process both files
-  demand_data = process_file(demand_files[1], crosswalk, "demand")$processed
   delivery_data = process_file(delivery_files[1], crosswalk, "delivery")$processed
-  
-  missing_demand = process_file(demand_files[1], crosswalk, "demand")$missing
   missing_delivery = process_file(delivery_files[1], crosswalk, "delivery")$missing
   
   # Combine and filter data
@@ -171,8 +150,7 @@ process_scenario = function(scenario_id, demand_folder, delivery_folder, crosswa
     mutate(
       demand_taf = as.numeric(ifelse(is.na(demand_taf), 0, demand_taf)),
       delivery_taf = as.numeric(ifelse(is.na(delivery_taf), 0, delivery_taf)),
-      percent_demand_met = ifelse(delivery_taf >= demand_taf, 100, delivery_taf / demand_taf * 100),
-      year = year(date))%>%
+      percent_demand_met = ifelse(delivery_taf >= demand_taf, 100, delivery_taf / demand_taf * 100))%>%
     select(scenario_id, dwuc, date, year, delivery_id, delivery_taf, demand_id, demand_taf, percent_demand_met)
   
   # Save monthly data
