@@ -25,7 +25,11 @@ Crosswalk between demand units' demand ID and delivery ID
 Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BYFQlIA0JJ31sAHDt7yMovLWWZvwoMeO)
 ```{r}
 crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
-  rename(dwuc = 1, demand_id = 2, delivery_id = 3)
+  rename(dwuc = 1, demand_id = 2, delivery_id = 3)%>%
+  mutate(dwuc = str_replace_all(dwuc, "[\n]+", ""))%>%
+  filter(!dwuc %in% c("71_NU", "72_NU"))
+
+#write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260407_crosswalk_processed.csv", row.names = T)
 ```
 
 # Demand and delivery data
