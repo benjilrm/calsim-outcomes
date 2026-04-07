@@ -20,12 +20,32 @@ knitr::opts_knit$set(root.dir = here())
 options(scipen = 999)
 ```
 
-# Import and process data
+# Import network data
 ```{r}
 network_df = read_excel("C:/Users/benji/Downloads/Network data with updated calsim demand assignments - April 3rd.xlsx")%>%
   mutate(average_source_usage = average_source_usage / 100)
 ```
 
+# Process data
+
+Create new rows to fill in the remainder (to hit 100% volume) for each system
+```{r}
+# Combine with original data
+network_df = bind_rows(
+  network_df, 
+  network_df %>%
+    group_by(pwsid) %>%
+    reframe(
+      source_name = "gw", 
+      source_type = "gw",
+      calsim_demandunit = "gw",
+      average_source_usage = 1 - sum(average_source_usage))%>%
+    filter(average_source_usage > 0))
+```
+
+# Demand unit tracing
+
+Create a dataframe of 'end nodes' that have a demand unit (and therefre don't need to be traced back further)
 ```{r}
 end_nodes <- network_df %>%
   filter(calsim_demandunit != "PWSID") %>%
@@ -34,7 +54,7 @@ end_nodes <- network_df %>%
   reframe(average_source_usage = sum(average_source_usage))
 ```
 
-
+Recursive function to trace back when any connections have their demand unit listed as 'PWSID'
 ```{r}
 # Step 1: Build PWSID → DU mappings (terminal nodes)
 du_mappings <- network_df %>%
@@ -46,7 +66,7 @@ pwsid_mappings <- network_df %>%
   filter(calsim_demandunit == "PWSID") %>%
   select(pwsid, source = source_name, volume = average_source_usage)
 
-# Step 3: Combine and calculate fractions
+# Step 3: Combine and calculate fractions of volume
 complete_map <- bind_rows(du_mappings, pwsid_mappings) %>%
   group_by(pwsid, source) %>%
   summarise(volume = sum(volume), .groups = "drop") %>%
@@ -66,8 +86,7 @@ trace_to_dus <- function(source_name, volume = 1, complete_list, visited = c()) 
   # Prevent infinite loops from circular dependencies
   if (source_name %in% visited) {
     warning(paste("Circular reference detected:", source_name))
-    return(tibble(traced_du = source_name, adjusted_volume = volume))
-  }
+    return(tibble(traced_du = source_name, adjusted_volume = volume))}
   
   # If this source is a PWSID that can be decomposed
   if (source_name %in% names(complete_list)) {
@@ -76,14 +95,11 @@ trace_to_dus <- function(source_name, volume = 1, complete_list, visited = c()) 
     results <- map2_dfr(
       components$source,
       components$fraction,
-      ~ trace_to_dus(.x, volume * .y, complete_list, c(visited, source_name))
-    )
-    return(results)
-  } else {
-    # Terminal - this is a real demand unit
-    return(tibble(traced_du = source_name, adjusted_volume = volume))
-  }
-}
+      ~ trace_to_dus(.x, volume * .y, complete_list, c(visited, source_name)))
+    return(results)} 
+  else {
+    # End node, so stop recursion and record that endnode's info
+    return(tibble(traced_du = source_name, adjusted_volume = volume))}}
 
 # Step 6: Apply to all purchases
 purchases <- network_df %>%
@@ -98,19 +114,21 @@ traced_results <- purchases %>%
   select(pwsid, traced_du, adjusted_volume) %>%
   group_by(pwsid, traced_du) %>%
   summarise(average_source_usage = sum(adjusted_volume), .groups = "drop")
-```
 
-
-```{r}
+# Step 7: combine traced results with end nodes to get 'master sheet' of each system's complete volume distribution across demand units
 final = rbind(traced_results, end_nodes)%>%
   mutate(average_source_usage = average_source_usage *100)%>%
   group_by(pwsid, traced_du)%>%
   reframe(average_source_usage = sum(average_source_usage))
+```
 
+# Diagnostics
+
+Do some manual tracing to make sure everything was calculated correctly
+```{r}
 final%>%
   filter(pwsid == "CA0110003")
 ```
-
 
 ```{r}
 network_df%>%
@@ -119,10 +137,7 @@ network_df%>%
   select(pwsid, source_name, average_source_usage, calsim_demandunit)
 ```
 
-
-
-
-Export
+# Export
 ```{r}
 write.csv(final, "Outputs/Static demand/20260406_traced_demand_units.csv", row.names = F)
 ```
