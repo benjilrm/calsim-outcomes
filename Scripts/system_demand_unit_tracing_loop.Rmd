@@ -261,13 +261,8 @@ crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260407_crosswa
 crosswalk%>%
   filter(!dwuc %in% demand_by_du$traced_du)
 ```
-
-
+## Export
 ```{r}
-network_df%>%
-  filter(pwsid %in% c("CA3410023", "CA3410033", "CA3400156", "CA3410020"))%>%
-  select(system_name, pwsid, source_name, calsim_demandunit)
-  filter(calsim_demandunit %in% c("26S_NU3", "ESB415"))%>%
-    select()
+write.csv(demand_by_du, "Outputs/Static demand/20260407_static_demand_by_du.csv", row.names = F)
 ```
 
