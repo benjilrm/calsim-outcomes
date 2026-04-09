@@ -31,7 +31,7 @@ crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
            delivery_id == "D_POSC015_CSPSO" ~ "D_PSC015_CSPSO",
            delivery_id == "D_SVWRD_CSTLN_PMI" ~ "D_SVRWD_CSTLN_PMI",
            T ~ delivery_id))%>%
-  filter(!dwuc %in% c("WSPNT_NU", "PINES", "ELDID_NA1", "CCWDI", "13_NU2", "26S_NU3", "71_NU", "72_NU", "ESB415"))
+  filter(!dwuc %in% c("WSPNT_NU", "PINES", "ELDID_NA1", "CCWDI", "13_NU2", "26S_NU3", "71_NU", "72_NU", "ESB415", "CLLPT"))
 
 write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv", row.names = F)
 ```
