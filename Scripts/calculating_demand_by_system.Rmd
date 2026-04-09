@@ -18,6 +18,7 @@ Set settings and universal variables
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = here())
 
+options(scipen = 999)
 ```
 
 # Import data
@@ -31,6 +32,37 @@ all_systems = read.csv("Outputs/Static demand/20260409_traced_demand_units.csv")
   unique()
 
 network_df = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260330_network_joined.csv")
+
+sdwis = read_excel("Inputs/SABL/EPASDWIS_Q12025_allactiveCAPWS.xlsx", skip = 3)%>%
+  rename(pwsid = 1, pop_served_sdwis = 6)%>%
+  select(1, 6)
+```
+
+
+# Join system boundaries to hydrologic region
+
+First, let's import a shapefile of polygons representing California's hydrological regions, downloaded from [this page](https://data.ca.gov/dataset/i03-hydrologic-regions)
+```{r}
+hydro_regions <- read_sf("Inputs/Hydrological regions/dwr_hydro_regions/i03_Hydrologic_Regions/i03_Hydrologic_Regions.shp")%>%
+  st_transform(crs = "EPSG:3857")%>%
+  select(HR_NAME)%>%
+  rename(hydro_region = 1)
+```
+
+We also import a shapefile of drinking water system area boundaries, obtained from [the California Stae Geoportal](https://gis.data.ca.gov/datasets/waterboards::california-drinking-water-system-area-boundaries/about).
+
+We filter for only community systems, and since some systems have both jurisdictional and water service area boundaries, we choose just one polygon per system to avoid duplicates (choosing water service area boundary if available, and jurisdictional boundary if not).
+
+Finally, we perform a spatial join to assign each system to the hydrological region it has the greatest area of overlap with.
+```{r}
+sabl = read_sf("Inputs/SABL/California_Drinking_Water_System_Area_Boundaries/California_Drinking_Water_System_Area_Boundaries.shp")%>%
+  rename(pwsid = 2)%>%
+  filter(STATE_CLAS == "COMMUNITY")%>%
+  group_by(pwsid)%>%
+  slice_max(BOUNDARY_T == "Water Service Area", n = 1)%>%
+  select(pwsid)%>%
+  st_transform(crs = "EPSG:3857")%>%
+  st_join(hydro_regions, largest = TRUE)
 ```
 
 # Calculate demand from Clearinghouse data
@@ -38,11 +70,11 @@ network_df = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs
 ## Import and process
 Let's obtain demand from clearinghouse where possible. 
 First, we'll import the dataset, which was downloaded from [this drive folder](https://drive.google.com/drive/u/0/folders/1Rma7KnAtB27FufcOi3jIxTPj8FabI5hp).
-We can then filter for only the systems we are interested in, and clean up some of the NA values.
+We can then filter for only community water systems (which we did for the SABL dataset already), and clean up some of the NA values.
 ```{r}
 clearinghouse <- readRDS("jenny_demand_by_system/processed_data/ch_wsi_2025.rds")%>%
   select(pwsid, potable_demand_unit_of_measure, total_annual_potable_demand, population, reporting_period_end_date)%>%
-  filter(pwsid %in% all_systems$pwsid)%>%
+  filter(pwsid %in% sabl$pwsid)%>%
   mutate(across(c(potable_demand_unit_of_measure, total_annual_potable_demand), ~na_if(., "Not Available")),
          total_annual_potable_demand = as.numeric(total_annual_potable_demand))
 ```
@@ -74,39 +106,10 @@ clearinghouse_median_gpcd = clearinghouse%>%
   mutate(total_annual_potable_demand_in_g_per_cap_day = total_annual_potable_demand_in_g / population / 365)%>%
   filter(total_annual_potable_demand_in_g_per_cap_day > 50,
          total_annual_potable_demand_in_g_per_cap_day < 250)%>%
-  
   group_by(pwsid)%>% 
   reframe(median_gpcd = median(total_annual_potable_demand_in_g_per_cap_day, na.rm = T))
-
-rm(clearinghouse)
 ```
 
-
-# Join system boundaries to hydrologic region
-
-First, let's import a shapefile of polygons representing California's hydrological regions, downloaded from [this page](https://data.ca.gov/dataset/i03-hydrologic-regions)
-```{r}
-hydro_regions <- read_sf("Inputs/Hydrological regions/dwr_hydro_regions/i03_Hydrologic_Regions/i03_Hydrologic_Regions.shp")%>%
-  st_transform(crs = "EPSG:3857")%>%
-  select(HR_NAME)%>%
-  rename(hydro_region = 1)
-```
-
-We also import a shapefile of drinking water system area boundaries, obtained from [the California Stae Geoportal](https://gis.data.ca.gov/datasets/waterboards::california-drinking-water-system-area-boundaries/about).
-
-We filter for only systems we are interested in, and since some systems have both jurisdictional and water service area boundaries, we choose just one polygon per system to avoid duplicates (choosing water service area boundary if available, and jurisdictional boundary if not).
-
-Finally, we perform a spatial join to assign each system to the hydrological region it has the greatest area of overlap with.
-```{r}
-sabl = read_sf("Inputs/SABL/California_Drinking_Water_System_Area_Boundaries/California_Drinking_Water_System_Area_Boundaries.shp")%>%
-  rename(pwsid = 2)%>%
-  filter(pwsid %in% all_systems$pwsid)%>%
-  group_by(pwsid)%>%
-  slice_max(BOUNDARY_T == "Water Service Area", n = 1)%>%
-  select(pwsid)%>%
-  st_transform(crs = "EPSG:3857")%>%
-  st_join(hydro_regions, largest = TRUE)
-```
 
 # Combine all data
 
@@ -119,7 +122,7 @@ We calculate the median demand for each hydrological region, and for any systems
 Finally, we join in the network data in order to see the provider type (Retail/Wholesale) for each system, and if systems with missing demand only do wholesale, we fill in their demand as zero (since they don't actually serve any retail population)
 
 ```{r}
-combined = left_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
+combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
   left_join(., sabl%>%st_drop_geometry(), by = "pwsid")%>%
   mutate(hydro_region = case_when(
     pwsid == "CA0110010" ~ "San Francisco Bay", # livermore - SF Bay
@@ -127,25 +130,37 @@ combined = left_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
     pwsid == "CA3010071" ~  "South Coast", # laguna beach - south coast
     pwsid == "CA3510007" ~  "Central Coast", # hollister - central coast
     pwsid == "CA3610019" ~  "South Coast", # san bernardino - south coast
+    pwsid == "CA3710707" ~ "South Coast", #San clemente island --> south coast
     T ~ hydro_region))%>%
   group_by(hydro_region)%>%
   mutate(regional_median = ifelse(is.na(hydro_region), NA, median(median_gpcd, na.rm = T)))%>%
   ungroup()%>%
-  left_join(., network_df%>%select(pwsid, pop_served, provider_type)%>%unique(), by = "pwsid")%>%
+  filter(pwsid %in% all_systems$pwsid)%>%
+  left_join(., network_df%>%select(pwsid, system_name, provider_type)%>%unique(), by = "pwsid")%>%
+  left_join(., clearinghouse%>%select(pwsid, population)%>%unique(), by = "pwsid")%>%
+  left_join(., sdwis, by = "pwsid")%>%
   mutate(
     approach = case_when(
-      pwsid == "CA3301115" ~ "jenny",
       is.na(median_gpcd) & !is.na(hydro_region) ~ "imputed",
       !is.na(median_gpcd) ~ "empirical",
       provider_type == "Wholesale" ~ "wholesaler",
       T ~ NA),
     median_gpcd = case_when(
-      pwsid == "CA3301115" ~ 122,
       is.na(median_gpcd) & provider_type == "Wholesale" ~ 0,
       is.na(median_gpcd) ~ regional_median, 
       T ~ median_gpcd),
-    demand_annual_taf = median_gpcd*pop_served*365/325851/1000)
+    pop_source = ifelse(is.na(population), "sdwis", "clearinghouse"),
+    population = ifelse(is.na(population), pop_served_sdwis, population),
+    demand_annual_taf = case_when(
+      approach == "wholesaler" ~ 0,
+      T ~ median_gpcd*population*365/325851/1000))%>%
+  select(pwsid, system_name, provider_type, hydro_region, population, pop_source, median_gpcd, approach, demand_annual_taf)
 ```
+
+```{r}
+combined
+```
+
 
 # Export
 ```{r}
@@ -160,14 +175,12 @@ jenny = read.csv("Inputs/Static demands/jenny_du_demand_final_123025.csv")%>%
   unique()
 
 comparison = combined%>%
-  select(pwsid, median_gpcd)%>%
+  select(pwsid, median_gpcd, approach)%>%
   left_join(., jenny, by = "pwsid")
 
 comparison
 
-write.csv(comparison,
-  "Outputs/Static demand/compare_jenny_vs_new_system_demands.csv",
-  row.names = F)
+write.csv(comparison, "Outputs/Static demand/compare_jenny_vs_new_system_demands.csv", row.names = F)
 ```
 
 
