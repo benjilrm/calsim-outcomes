@@ -20,12 +20,20 @@ knitr::opts_knit$set(root.dir = here())
 options(scipen = 999)
 ```
 
-# Import network data
+# Import data
+
+## Network data
 ```{r}
-network_df = read_excel("C:/Users/benji/Downloads/Network data with updated calsim demand assignments - April 3rd.xlsx")%>%
+network_df = read_excel("Inputs/Demand unit key/Network data with updated calsim demand assignments - April 8th V2.xlsx")%>%
   mutate(average_source_usage = average_source_usage / 100,
          calsim_demandunit = str_squish(calsim_demandunit))
 ```
+
+## Crosswalk
+```{r}
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv")
+```
+
 
 # Process data
 
@@ -150,6 +158,8 @@ traced_dus = final%>%
 
 In many cases, multiple demand units will be listed, separate by a semicolon. In these cases, we want to split them up and distribute the volume between them proportional to their historical deliveries. 
 
+## Calculate historical deliveries
+
 So first, let's import the annual delivery data from CalSim (baseline scenario s0020) and calculate the mean annual delivery per demand unit. 
 ```{r}
 historical_deliveries = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
@@ -162,7 +172,7 @@ historical_deliveries = read.csv("Outputs/Annual demand met/s0020_demand_met_by_
 extract_scenario_id = function(filename) {
   str_extract(filename, "s\\d+") %>% tolower()}
 
-file_path = "C:/Users/benji/Downloads/s0020_DCRadjBL_2020LU_wTUCP_DELIVERIES.csv"
+file_path = "Inputs/Deliveries/s0020_DCRadjBL_2020LU_wTUCP_DELIVERIES.csv"
 
 scenario_id = extract_scenario_id(basename(file_path))
   
@@ -225,10 +235,9 @@ traced_dus_split = traced_dus%>%
 ```
 
 
-
 ## Export
 ```{r}
-write.csv(traced_dus_split, "Outputs/Static demand/20260407_traced_demand_units.csv", row.names = F)
+write.csv(traced_dus_split, "Outputs/Static demand/20260409_traced_demand_units.csv", row.names = F)
 ```
 
 
@@ -240,7 +249,7 @@ So now, in order to calculate total demand by demand unit, we can join in a data
 You can find Jenny's github for these calculations [here](https://github.com/jenrempel/coeqwal_demand/tree/main). I am drawing upon 'du_demand_final_123025.csv' in the 'processed data' folder. 
 
 ```{r}
-demand_by_system = read.csv("C:/Users/benji/Downloads/coeqwal_demand-main/coeqwal_demand-main/processed_data/du_demand_final_123025.csv")%>%
+demand_by_system = read.csv("Inputs/Static demands/jenny_du_demand_final_123025.csv")%>%
   select(pwsid, scenario_baseline_pop_total_demand_af_per_yr_system_total)%>%
   rename(demand_system_af = 2)%>%
   unique()
@@ -256,13 +265,34 @@ demand_by_du = left_join(traced_dus_split, demand_by_system, by = "pwsid")%>%
 
 ## Diagnostics
 ```{r}
-crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260407_crosswalk_processed.csv")
-
-crosswalk%>%
-  filter(!dwuc %in% demand_by_du$traced_du)
+crosswalk%>%filter(!dwuc %in% demand_by_du$traced_du)
+crosswalk%>%filter(!dwuc %in% traced_dus_split$traced_du)
 ```
+
 ## Export
 ```{r}
-write.csv(demand_by_du, "Outputs/Static demand/20260407_static_demand_by_du.csv", row.names = F)
+write.csv(demand_by_du, "Outputs/Static demand/20260409_static_demand_by_du_jenny.csv", row.names = F)
+```
+
+
+
+```{r}
+new_demand = read.csv("C:/Users/benji/Downloads/coeqwal_demand-main/coeqwal_demand-main/processed_data/du_demand_final_122025.csv")%>%
+  select(pwsid, scenario_baseline_pop_total_demand_af_per_yr_system_total)%>%
+  rename(new_demand_system_af = 2)%>%
+  unique()
+
+write.csv(demand_by_system%>%
+  full_join(., new_demand, by = "pwsid")%>%
+  filter(pwsid %in% network_df$pwsid)%>%
+  rename(jenny_demand_system_af = 2),
+  "Outputs/Static demand/jenny_vs_new_system_demands.csv", row.names = F)
+
+
+demand_by_system%>%
+  full_join(., new_demand, by = "pwsid")%>%
+  filter(pwsid %in% network_df$pwsid)%>%
+  rename(jenny_demand_system_af = 2)%>%
+  filter(is.na(new_demand_system_af))
 ```
 
