@@ -237,7 +237,7 @@ traced_dus_split = traced_dus%>%
 
 ## Export
 ```{r}
-write.csv(traced_dus_split, "Outputs/Static demand/20260409_traced_demand_units.csv", row.names = F)
+#write.csv(traced_dus_split, "Outputs/Static demand/20260409_traced_demand_units.csv", row.names = F)
 ```
 
 
@@ -249,8 +249,8 @@ So now, in order to calculate total demand by demand unit, we can join in a data
 You can find Jenny's github for these calculations [here](https://github.com/jenrempel/coeqwal_demand/tree/main). I am drawing upon 'du_demand_final_123025.csv' in the 'processed data' folder. 
 
 ```{r}
-demand_by_system = read.csv("Inputs/Static demands/jenny_du_demand_final_123025.csv")%>%
-  select(pwsid, scenario_baseline_pop_total_demand_af_per_yr_system_total)%>%
+demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_system.csv")
+  select(pwsid, median_gcpd)%>%
   rename(demand_system_af = 2)%>%
   unique()
 ```
@@ -272,27 +272,5 @@ crosswalk%>%filter(!dwuc %in% traced_dus_split$traced_du)
 ## Export
 ```{r}
 write.csv(demand_by_du, "Outputs/Static demand/20260409_static_demand_by_du_jenny.csv", row.names = F)
-```
-
-
-
-```{r}
-new_demand = read.csv("C:/Users/benji/Downloads/coeqwal_demand-main/coeqwal_demand-main/processed_data/du_demand_final_122025.csv")%>%
-  select(pwsid, scenario_baseline_pop_total_demand_af_per_yr_system_total)%>%
-  rename(new_demand_system_af = 2)%>%
-  unique()
-
-write.csv(demand_by_system%>%
-  full_join(., new_demand, by = "pwsid")%>%
-  filter(pwsid %in% network_df$pwsid)%>%
-  rename(jenny_demand_system_af = 2),
-  "Outputs/Static demand/jenny_vs_new_system_demands.csv", row.names = F)
-
-
-demand_by_system%>%
-  full_join(., new_demand, by = "pwsid")%>%
-  filter(pwsid %in% network_df$pwsid)%>%
-  rename(jenny_demand_system_af = 2)%>%
-  filter(is.na(new_demand_system_af))
 ```
 
