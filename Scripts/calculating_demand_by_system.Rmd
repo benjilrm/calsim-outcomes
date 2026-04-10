@@ -155,13 +155,13 @@ combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
     population = ifelse(is.na(population), pop_served_sdwis, population),
     demand_annual_taf = case_when(
       approach == "wholesaler" ~ 0,
-      T ~ median_gpcd*population*365/325851/1000))%>%
+      T ~ median_gpcd*population*365/325851428))%>%
   select(pwsid, system_name, provider_type, hydro_region, population, pop_source, median_gpcd, approach, demand_annual_taf)
 ```
 
 # Export
 ```{r}
-write.csv(combined, "Outputs/Static demand/20260409_static_demand_by_system.csv", row.names = F)
+write.csv(combined, "Outputs/Static demand/20260410_static_demand_by_system.csv", row.names = F)
 ```
 
 
