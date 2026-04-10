@@ -263,7 +263,7 @@ demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_sys
 demand_by_du = left_join(traced_dus_split, demand_by_system, by = "pwsid")%>%
   mutate(demand_du =  demand_system_af * average_source_usage/100)%>%
   group_by(traced_du)%>%
-  reframe(demand_du_taf = sum(demand_du)/1000)%>%
+  reframe(demand_du_taf = sum(demand_du))%>%
   arrange(traced_du)
 ```
 
