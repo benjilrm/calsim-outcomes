@@ -234,6 +234,24 @@ results = process_all_scenarios(
   output_base = "Outputs")
 ```
 
+Plot for baseline
+```{r}
+read.csv("Outputs/Tier summaries/20260410_all_scenarios_through_cc95_tiers_categorical.csv")%>%
+  filter(scenario_id == "s0020")%>%
+  pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
+  filter(!is.na(tier))%>%
+  group_by(scenario_id)%>%
+  mutate(total_n = n())%>%
+  ungroup()%>%
+  group_by(scenario_id, tier)%>%
+  reframe(prop = n()/total_n)%>%
+  unique()%>%
+  ggplot(aes(tier, prop, fill = as.factor(tier)))+
+  geom_col(position="dodge")+
+  labs(x= "Tier", y = "Proportion of Demand Units", fill = "Tier")+
+  theme_bw()+
+  theme(legend.position = "None")
+```
 
 
 
