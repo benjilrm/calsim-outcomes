@@ -220,12 +220,5 @@ grouped
 ```
 
 
-```{r}
-combined_df%>%
-  filter(dwuc == "26N_NU1")
-```
-
-
-
 
 
