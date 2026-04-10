@@ -196,7 +196,8 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
   
   # Process each scenario and collect results
   all_tiers = bind_rows(map(delivery_scenarios, function(scenario_id) {
-    process_scenario(scenario_id, delivery_folder, crosswalk, output_base)}))
+    process_scenario(scenario_id, delivery_folder, crosswalk, output_base)}))%>%
+    filter(!is.na(scenario_id))
   
   # Convert to matrix format for both categorical and continuous tier results
   tier_matrix_categorical = all_tiers %>%
