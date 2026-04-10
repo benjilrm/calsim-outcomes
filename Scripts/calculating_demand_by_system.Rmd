@@ -157,11 +157,6 @@ combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
   select(pwsid, system_name, provider_type, hydro_region, population, pop_source, median_gpcd, approach, demand_annual_taf)
 ```
 
-```{r}
-combined
-```
-
-
 # Export
 ```{r}
 write.csv(combined, "Outputs/Static demand/20260409_static_demand_by_system.csv", row.names = F)
