@@ -115,11 +115,13 @@ clearinghouse_median_gpcd = clearinghouse%>%
 
 Join our list of systems with the empirical demand obtained from Clearinghouse data.
 
-Also join in our SABL layer with hydrological region info, and fill in the hydrological region manually for 5 systems that aren't in the SABL database. These were manually looked up by Jenny. 
+Also join in our SABL layer with hydrological region info, and fill in the hydrological region manually for 6 systems that aren't in the SABL database. These were manually looked up by Jenny. 
 
 We calculate the median demand for each hydrological region, and for any systems without empirical demand data from Clearinghouse, we fill in the missing values with the median demand for the hydrological region it's in. 
 
-Finally, we join in the network data in order to see the provider type (Retail/Wholesale) for each system, and if systems with missing demand only do wholesale, we fill in their demand as zero (since they don't actually serve any retail population)
+Then, we join in the network data in order to see the provider type (Retail/Wholesale) for each system, and if systems with missing demand only do wholesale, we fill in their demand as zero (since they don't actually serve any retail population)
+
+And finally, we convert units to annual TAF demand using the clearinghouse population data (and SDWIS population data for any systems not in clearinghouse).
 
 ```{r}
 combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
@@ -162,20 +164,5 @@ combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
 write.csv(combined, "Outputs/Static demand/20260409_static_demand_by_system.csv", row.names = F)
 ```
 
-
-# Compare with Jenny's older values
-```{r}
-jenny = read.csv("Inputs/Static demands/jenny_du_demand_final_123025.csv")%>%
-  select(pwsid, annual_total_demand_in_gpcd_final)%>%
-  unique()
-
-comparison = combined%>%
-  select(pwsid, median_gpcd, approach)%>%
-  left_join(., jenny, by = "pwsid")
-
-comparison
-
-write.csv(comparison, "Outputs/Static demand/compare_jenny_vs_new_system_demands.csv", row.names = F)
-```
 
 
