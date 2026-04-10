@@ -22,16 +22,30 @@ options(scipen = 999)
 
 # Import data
 
-## Network data
-```{r}
-network_df = read_excel("Inputs/Demand unit key/Network data with updated calsim demand assignments - April 8th V2.xlsx")%>%
-  mutate(average_source_usage = average_source_usage / 100,
-         calsim_demandunit = str_squish(calsim_demandunit))
-```
 
 ## Crosswalk
+
+These are the drinking water demand units in CalSim we want to focus on
 ```{r}
 crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv")
+```
+
+## Network data
+
+Import most recent version and make a couple manual edits:
+- There are 12 ag-demand units that aren't relevant to our drinking water calculations, so we'll change them to 'Out of CalSim'
+- There is also an infinite loop between CA4410014 and CA4410002 since they both sell water to each other. Kristin confirmed that none of those connections relate to CalSim, so we'll also change those connections to 'Out of CalSim' to avoid the infinite loop
+```{r}
+filter_out = c("20_NA1", "25_PA1; SIDSH", "60N_NA1", "61_NA2", "64_PA1", "73_PA1", "73_PA3", "90_PA1", "90_PA2", "CLLPT", "FKC")
+
+network_df = read_excel("Inputs/Demand unit key/Network data with updated calsim demand assignments - April 8th V2.xlsx")%>%
+  mutate(average_source_usage = average_source_usage / 100,
+         calsim_demandunit = str_squish(calsim_demandunit),
+         calsim_demandunit = ifelse(
+           (pwsid %in% c("CA4410014", "CA4410002") & calsim_demandunit == "PWSID") | calsim_demandunit %in% filter_out,
+           "Out of CalSim", calsim_demandunit))
+
+
 ```
 
 
@@ -161,12 +175,6 @@ In many cases, multiple demand units will be listed, separate by a semicolon. In
 ## Calculate historical deliveries
 
 So first, let's import the annual delivery data from CalSim (baseline scenario s0020) and calculate the mean annual delivery per demand unit. 
-```{r}
-historical_deliveries = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
-  select(dwuc, annual_delivery)%>%
-  group_by(dwuc)%>%
-  reframe(mean_annual_delivery = mean(annual_delivery))
-```
 
 ```{r}
 extract_scenario_id = function(filename) {
@@ -227,17 +235,14 @@ traced_dus_split = traced_dus%>%
   mutate(total_deliveries = sum(mean_annual_delivery_taf))%>%
   ungroup()%>%
   mutate(ratio = mean_annual_delivery_taf / total_deliveries,
-    average_source_usage = case_when(
-      traced_du == "25_PA1" & split == 1 ~ average_source_usage * 0.77,
-      traced_du == "SIDSH" & split == 1 ~ average_source_usage * 0.23,
-      split == 1 & !is.na(mean_annual_delivery_taf) ~ average_source_usage*ratio, 
-      T ~ average_source_usage))
+    average_source_usage = ifelse(
+      split == 1 & !is.na(mean_annual_delivery_taf), average_source_usage*ratio, average_source_usage))
 ```
 
 
 ## Export
 ```{r}
-#write.csv(traced_dus_split, "Outputs/Static demand/20260409_traced_demand_units.csv", row.names = F)
+write.csv(traced_dus_split, "Outputs/Static demand/20260410_traced_demand_units.csv", row.names = F)
 ```
 
 
@@ -249,10 +254,9 @@ So now, in order to calculate total demand by demand unit, we can join in a data
 You can find Jenny's github for these calculations [here](https://github.com/jenrempel/coeqwal_demand/tree/main). I am drawing upon 'du_demand_final_123025.csv' in the 'processed data' folder. 
 
 ```{r}
-demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_system.csv")
-  select(pwsid, median_gcpd)%>%
-  rename(demand_system_af = 2)%>%
-  unique()
+demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_system.csv")%>%
+  select(pwsid, demand_annual_taf)%>%
+  rename(demand_system_af = 2)
 ```
 
 ```{r}
@@ -271,6 +275,6 @@ crosswalk%>%filter(!dwuc %in% traced_dus_split$traced_du)
 
 ## Export
 ```{r}
-write.csv(demand_by_du, "Outputs/Static demand/20260409_static_demand_by_du_jenny.csv", row.names = F)
+write.csv(demand_by_du, "Outputs/Static demand/20260410_static_demand_by_du_updated.csv", row.names = F)
 ```
 
