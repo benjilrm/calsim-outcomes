@@ -30,7 +30,7 @@ crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswa
 
 Surface water demand unit key--this is the output from 'system_demand_unit_tracing_loop.Rmd', in which we compile a master list of all the demand units that serve or potentially serve each system. 
 ```{r}
-du_key = read.csv("Outputs/Static demand/20260409_traced_demand_units.csv")%>%
+du_key = read.csv("Outputs/Static demand/20260413_traced_demand_units.csv")%>%
   rename(demand_unit = traced_du)%>%
   select(pwsid, demand_unit)
 ```
@@ -155,12 +155,12 @@ lat_longs = full_master_key%>%
   st_transform(wgs_crs)%>%
   mutate(lon = st_coordinates(geometry)[,1], 
          lat = st_coordinates(geometry)[,2],
-         dw_du = ifelse(calsim_demandunit %in% calsim_dus$demand_unit, 1, 0))%>%
+         dw_du = ifelse(calsim_demandunit %in% crosswalk$dwuc, 1, 0))%>%
   st_drop_geometry()
 ```
 
 Export
 ```{r}
-write.csv(full_master_key, "Outputs/Demand unit to PWSID keys/20260409_demand_unit_pwsid_master_list.csv", row.names = F)
-write.csv(lat_longs, "Outputs/Demand unit to PWSID keys/20260409_demand_unit_lat_longs.csv", row.names = F)
+write.csv(full_master_key, "Outputs/Demand unit to PWSID keys/20260413_demand_unit_pwsid_master_list.csv", row.names = F)
+write.csv(lat_longs, "Outputs/Demand unit to PWSID keys/20260413_demand_unit_lat_longs.csv", row.names = F)
 ```
