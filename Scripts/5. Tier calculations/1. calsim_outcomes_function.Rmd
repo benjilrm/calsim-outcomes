@@ -27,7 +27,7 @@ crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswa
 
 # Demand data
 ```{r}
-static_demand = read.csv("Outputs/Static demand/20260410_static_demand_by_du_updated.csv")%>%
+static_demand = read.csv("Outputs/Static demand/20260413_static_demand_by_du_updated.csv")%>%
   rename(dwuc = traced_du, annual_demand = demand_du_taf)%>%
   filter(dwuc %in% crosswalk$dwuc)%>%
   crossing(year = 1921:2021)%>%
@@ -208,8 +208,8 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
   # Save tier outputs
   tier_dir = file.path(output_base, "Tier summaries")
   dir.create(tier_dir, showWarnings = F, recursive = T)
-  write.csv(tier_matrix_categorical, file.path(tier_dir, "20260410_all_scenarios_through_cc95_tiers_categorical.csv"), row.names = F)
-  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260410_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
+  write.csv(tier_matrix_categorical, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_categorical.csv"), row.names = F)
+  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
 ```
 
 # Run functions
@@ -225,7 +225,7 @@ results = process_all_scenarios(
 
 Plot for baseline
 ```{r}
-read.csv("Outputs/Tier summaries/20260410_all_scenarios_through_cc95_tiers_categorical.csv")%>%
+read.csv("Outputs/Tier summaries/20260413_all_scenarios_through_cc95_tiers_categorical.csv")%>%
   filter(scenario_id == "s0020")%>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
