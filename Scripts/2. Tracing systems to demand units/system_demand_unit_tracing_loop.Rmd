@@ -38,14 +38,12 @@ Import most recent version and make a couple manual edits:
 ```{r}
 filter_out = c("20_NA1", "25_PA1; SIDSH", "60N_NA1", "61_NA2", "64_PA1", "73_PA1", "73_PA3", "90_PA1", "90_PA2", "CLLPT", "FKC")
 
-network_df = read_excel("Inputs/Demand unit key/Network data with updated calsim demand assignments - April 8th V2.xlsx")%>%
+network_df = read_excel("Inputs/Demand unit key/Updated network data for demand units April 13th.xlsx")%>%
   mutate(average_source_usage = average_source_usage / 100,
          calsim_demandunit = str_squish(calsim_demandunit),
          calsim_demandunit = ifelse(
            (pwsid %in% c("CA4410014", "CA4410002") & calsim_demandunit == "PWSID") | calsim_demandunit %in% filter_out,
            "Out of CalSim", calsim_demandunit))
-
-
 ```
 
 
@@ -148,12 +146,12 @@ final = rbind(traced_results, end_nodes)%>%
 ## Diagnostics
 
 Do some manual tracing to make sure everything was calculated correctly
-```{r}
+```{r, eval = F}
 final%>%
   filter(pwsid == "CA0110003")
 ```
 
-```{r}
+```{r, eval = F}
 network_df%>%
   mutate(average_source_usage = average_source_usage * 100)%>%
   filter(pwsid %in% c("CA0110003", "CA0110010"))%>%
@@ -242,5 +240,5 @@ traced_dus_split = traced_dus%>%
 
 ## Export
 ```{r}
-write.csv(traced_dus_split, "Outputs/Static demand/20260410_traced_demand_units.csv", row.names = F)
+write.csv(traced_dus_split, "Outputs/Static demand/20260413_traced_demand_units.csv", row.names = F)
 ```
