@@ -23,9 +23,10 @@ options(scipen = 999)
 
 # Import data
 
-We'll import 2 datasets:
+We'll import 3 datasets:
 1) a list of all systems we need demands calculated for
 2) our network dataset (which contains useful information such as retail/wholesale status)
+3) SDWIS, which has data on population served by system that can help supplement the clearinghouse data
 ```{r}
 all_systems = read.csv("Outputs/Static demand/20260409_traced_demand_units.csv")%>%
   select(pwsid)%>%

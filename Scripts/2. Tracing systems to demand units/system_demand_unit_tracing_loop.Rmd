@@ -244,37 +244,3 @@ traced_dus_split = traced_dus%>%
 ```{r}
 write.csv(traced_dus_split, "Outputs/Static demand/20260410_traced_demand_units.csv", row.names = F)
 ```
-
-
-# Calculating demand by demand unit
-
-Great, so now, for each system, we know the distribution of how much water they get from different demand units. 
-So now, in order to calculate total demand by demand unit, we can join in a dataset that Jenny calculated of demand (in AF) per year per system. 
-
-You can find Jenny's github for these calculations [here](https://github.com/jenrempel/coeqwal_demand/tree/main). I am drawing upon 'du_demand_final_123025.csv' in the 'processed data' folder. 
-
-```{r}
-demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_system.csv")%>%
-  select(pwsid, demand_annual_taf)%>%
-  rename(demand_system_af = 2)
-```
-
-```{r}
-demand_by_du = left_join(traced_dus_split, demand_by_system, by = "pwsid")%>%
-  mutate(demand_du =  demand_system_af * average_source_usage/100)%>%
-  group_by(traced_du)%>%
-  reframe(demand_du_taf = sum(demand_du))%>%
-  arrange(traced_du)
-```
-
-## Diagnostics
-```{r}
-crosswalk%>%filter(!dwuc %in% demand_by_du$traced_du)
-crosswalk%>%filter(!dwuc %in% traced_dus_split$traced_du)
-```
-
-## Export
-```{r}
-write.csv(demand_by_du, "Outputs/Static demand/20260410_static_demand_by_du_updated.csv", row.names = F)
-```
-

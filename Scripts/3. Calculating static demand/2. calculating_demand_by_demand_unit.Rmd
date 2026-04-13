@@ -1,0 +1,70 @@
+
+
+# Set up
+
+Import packages
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+    library(tidyverse)
+    library(readxl)
+    library(here)
+    library(sf)
+  })})
+```
+
+Set settings and universal variables
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here())
+
+options(scipen = 999)
+```
+
+# Import data
+
+## Crosswalk
+These are the drinking water demand units in CalSim we want to focus on
+```{r}
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv")
+```
+
+## Traced demand units
+Dataset generated in 'system_demand_unit_tracing_loop.Rmd' in which we traced all systems back to all demand units they are serviced by
+```{r}
+traced_dus_split = read.csv("Outputs/Static demand/20260410_traced_demand_units.csv")
+```
+
+
+# Calculating demand by demand unit
+
+Great, so now, for each system, we know the distribution of how much water they get from different demand units. 
+So now, in order to calculate total demand by demand unit, we can join in a dataset that we calculated of demand (in TAF) per year per system. 
+
+I am drawing upon output genereated by the 'calculating_demand_by_system.Rmd' script, which is based on Jenny's original code and methodology
+that can be found [here](https://github.com/jenrempel/coeqwal_demand/tree/main). 
+
+```{r}
+demand_by_system = read.csv("Outputs/Static demand/20260409_static_demand_by_system.csv")%>%
+  select(pwsid, demand_annual_taf)%>%
+  rename(demand_system_af = 2)
+```
+
+```{r}
+demand_by_du = left_join(traced_dus_split, demand_by_system, by = "pwsid")%>%
+  mutate(demand_du =  demand_system_af * average_source_usage/100)%>%
+  group_by(traced_du)%>%
+  reframe(demand_du_taf = sum(demand_du))%>%
+  arrange(traced_du)
+```
+
+## Diagnostics
+Ensure we have estimates for all demand units
+```{r}
+crosswalk%>%filter(!dwuc %in% demand_by_du$traced_du)
+crosswalk%>%filter(!dwuc %in% traced_dus_split$traced_du)
+```
+
+## Export
+```{r}
+write.csv(demand_by_du, "Outputs/Static demand/20260410_static_demand_by_du_updated.csv", row.names = F)
+```
