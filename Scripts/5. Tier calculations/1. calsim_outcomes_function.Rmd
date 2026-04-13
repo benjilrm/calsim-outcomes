@@ -242,5 +242,11 @@ read.csv("Outputs/Tier summaries/20260413_all_scenarios_through_cc95_tiers_categ
   theme(legend.position = "None")
 ```
 
+Check to make sure nothing looks off (using baseline as example)
+```{r}
+read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+  arrange(dwuc)%>%
+  filter(percent_demand_met < 70)
+```
 
 
