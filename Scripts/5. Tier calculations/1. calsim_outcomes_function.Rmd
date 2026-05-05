@@ -22,7 +22,7 @@ options(scipen = 999)
 
 These are the drinking water demand units in CalSim we want to focus on
 ```{r}
-crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv")
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260413_crosswalk_processed.csv")
 ```
 
 # Demand data
@@ -246,7 +246,11 @@ Check to make sure nothing looks off (using baseline as example)
 ```{r}
 read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
   arrange(dwuc)%>%
-  filter(percent_demand_met < 70)
+  filter(dwuc == "SBA029")%>%
+  mutate(met = ifelse(percent_demand_met >= 90, 1, 0),
+         below50 = ifelse(percent_demand_met < 50, 1, 0))%>%
+  reframe(n_years_demand_met = sum(met), percent_years_demand_met = mean(met)*100,
+          percent_years_below50 = mean(below50), n_years_below50 = sum(below50))
 ```
 
 

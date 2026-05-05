@@ -27,7 +27,7 @@ options(scipen = 999)
 
 These are the drinking water demand units in CalSim we want to focus on
 ```{r}
-crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260409_crosswalk_processed.csv")
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260413_crosswalk_processed.csv")
 ```
 
 ## Network data
@@ -38,7 +38,7 @@ Import most recent version and make a couple manual edits:
 ```{r}
 filter_out = c("20_NA1", "25_PA1; SIDSH", "60N_NA1", "61_NA2", "64_PA1", "73_PA1", "73_PA3", "90_PA1", "90_PA2", "CLLPT", "FKC")
 
-network_df = read_excel("Inputs/Demand unit key/Updated network data for demand units April 13th.xlsx")%>%
+network_df = read.csv("C:/Users/benji/Desktop/COEQWAL/ca-surface-water-sources/Data/Outputs/20260505_network_joined.csv")%>%
   mutate(average_source_usage = average_source_usage / 100,
          calsim_demandunit = str_squish(calsim_demandunit),
          calsim_demandunit = ifelse(
@@ -240,5 +240,5 @@ traced_dus_split = traced_dus%>%
 
 ## Export
 ```{r}
-write.csv(traced_dus_split, "Outputs/Static demand/20260413_traced_demand_units.csv", row.names = F)
+write.csv(traced_dus_split, "Outputs/Static demand/20260505_traced_demand_units.csv", row.names = F)
 ```

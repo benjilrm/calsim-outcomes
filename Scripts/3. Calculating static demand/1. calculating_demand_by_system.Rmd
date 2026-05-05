@@ -28,11 +28,11 @@ We'll import 3 datasets:
 2) our network dataset (which contains useful information such as retail/wholesale status)
 3) SDWIS, which has data on population served by system that can help supplement the clearinghouse data
 ```{r}
-all_systems = read.csv("Outputs/Static demand/20260413_traced_demand_units.csv")%>%
+all_systems = read.csv("Outputs/Static demand/20260505_traced_demand_units.csv")%>%
   select(pwsid)%>%
   unique()
 
-network_df = read.csv("C:/Users/benji/Desktop/COEQWAL/coeqwal-benji/Data/Outputs/20260330_network_joined.csv")
+network_df = read.csv("C:/Users/benji/Desktop/COEQWAL/ca-surface-water-sources/Data/Outputs/20260505_network_joined.csv")
 
 sdwis = read_excel("Inputs/SABL/EPASDWIS_Q12025_allactiveCAPWS.xlsx", skip = 3)%>%
   rename(pwsid = 1, pop_served_sdwis = 6)%>%
@@ -162,7 +162,7 @@ combined = full_join(all_systems, clearinghouse_median_gpcd, by = "pwsid")%>%
 
 # Export
 ```{r}
-write.csv(combined, "Outputs/Static demand/20260413_static_demand_by_system.csv", row.names = F)
+write.csv(combined, "Outputs/Static demand/20260505_static_demand_by_system.csv", row.names = F)
 ```
 
 
