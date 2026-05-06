@@ -222,6 +222,25 @@ results = process_all_scenarios(
   crosswalk = crosswalk,
   output_base = "Outputs")
 ```
+Diagnostic summary
+```{r}
+diagnostic = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+  mutate(unmet90 = ifelse(percent_demand_met < 90, 1, 0),
+         unmet70 = ifelse(percent_demand_met < 70, 1, 0))%>%
+  group_by(scenario_id, dwuc)%>%
+  reframe(n_years_unmet90 = sum(unmet90),
+          n_years_unmet70 = sum(unmet70))
+
+diagnostic%>%
+  ggplot(aes(n_years_unmet90))+
+  geom_histogram(fill = "coral2", colour = "black")+
+  theme_bw(15)+
+  labs(y = "# of demand units", x = "# of years with <90% of demand met")
+
+#write.csv(diagnostic, "Outputs/20260506_tier_threshold_diagnostic.csv")
+```
+
+
 
 Plot for baseline
 ```{r}
