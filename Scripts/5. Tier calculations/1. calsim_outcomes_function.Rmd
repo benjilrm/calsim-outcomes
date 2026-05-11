@@ -146,11 +146,13 @@ process_scenario = function(scenario_id, delivery_folder, crosswalk, output_base
   
   # Calculate tiers
   tiers = combined_annual %>%
-    mutate(percent_demand_met = round(percent_demand_met),
+    mutate(
+      percent_demand_met = round(percent_demand_met),
       demand_met = ifelse(percent_demand_met >= 90, 1, 0)) %>%
     group_by(scenario_id, dwuc) %>%
     reframe(
-      perc_years_met = mean(demand_met, na.rm = T) * 100,
+      perc_years_90met = mean(demand_met, na.rm = T) * 100,
+      perc_years_90unmet = (100 - perc_years_90met)/100,
       min_met = min(percent_demand_met),
       below_50 = mean(percent_demand_met < 50)*100)%>%
     ungroup() %>%
@@ -159,8 +161,9 @@ process_scenario = function(scenario_id, delivery_folder, crosswalk, output_base
         perc_years_met >= 90 & min_met > 70 ~ 1,
         perc_years_met >= 50 & min_met > 50 ~ 2,
         perc_years_met >= 50 & below_50 <= 20 ~ 3,
-        T ~ 4)) %>%
-    select(scenario_id, dwuc, tier, perc_years_met)
+        T ~ 4),
+      tier_decimal = tier + perc_years_90unmet) %>%
+    select(scenario_id, dwuc, tier, tier_decimal)
   
   return(tiers)}
 ```
@@ -189,8 +192,8 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
     filter(!is.na(scenario_id))
   
   # Convert to matrix format for both categorical and continuous tier results
-  tier_matrix_categorical = all_tiers %>%
-    select(-perc_years_met)%>%
+  tier_matrix_ordinal = all_tiers %>%
+    select(-tier_decimal)%>%
     pivot_wider(
       names_from = dwuc,
       values_from = tier,
@@ -201,14 +204,14 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
     select(-tier)%>%
     pivot_wider(
       names_from = dwuc,
-      values_from = perc_years_met,
+      values_from = tier_decimal,
       names_sort = T)%>%
     arrange(scenario_id)
   
   # Save tier outputs
   tier_dir = file.path(output_base, "Tier summaries")
   dir.create(tier_dir, showWarnings = F, recursive = T)
-  write.csv(tier_matrix_categorical, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_categorical.csv"), row.names = F)
+  write.csv(tier_matrix_ordinal, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_ordinal.csv"), row.names = F)
   write.csv(tier_matrix_continuous, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
 ```
 
@@ -222,6 +225,7 @@ results = process_all_scenarios(
   crosswalk = crosswalk,
   output_base = "Outputs")
 ```
+
 Diagnostic summary
 ```{r}
 diagnostic = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
