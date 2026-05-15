@@ -232,15 +232,24 @@ results = process_all_scenarios(
   output_base = "Outputs")
 ```
 
+# Mean annual delivery output
+
+Loop through all deliveries dfs in output subfolder. Calculate mean annual deliveries for each demand unit in each scenario.
+```{r}
+folder <- "Outputs/Annual demand met"
+
+mean_annual_deliveries <- list.files(path = folder, pattern = "\\.csv$", full.names = T) %>%
+  map_df(~read_csv(.x, show_col_types = FALSE))%>%
+  filter(!year %in% c(1921, 2021))%>%
+  group_by(scenario_id, dwuc)%>%
+  reframe(mean_annual_delivery = mean(annual_delivery))
+
+write.csv(mean_annual_deliveries, "Outputs/20250515mean_annual_deliveries.csv", row.names = F)
+```
+
+
 Diagnostic summary
 ```{r}
-diagnostic = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
-  mutate(unmet90 = ifelse(percent_demand_met < 90, 1, 0),
-         unmet70 = ifelse(percent_demand_met < 70, 1, 0))%>%
-  group_by(scenario_id, dwuc)%>%
-  reframe(n_years_unmet90 = sum(unmet90),
-          n_years_unmet70 = sum(unmet70))
-
 read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
   mutate(percent_demand_met = round(percent_demand_met),
       demand_met = ifelse(percent_demand_met >= 90, 1, 0)) %>%
@@ -276,6 +285,16 @@ read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
     labs(x = "Number of Years with >90% Demand Met", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
     scale_x_continuous(position = "top")
   theme(legend.position = "bottom")
+```
+
+
+```{r}
+diagnostic = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+  mutate(unmet90 = ifelse(percent_demand_met < 90, 1, 0),
+         unmet70 = ifelse(percent_demand_met < 70, 1, 0))%>%
+  group_by(scenario_id, dwuc)%>%
+  reframe(n_years_unmet90 = sum(unmet90),
+          n_years_unmet70 = sum(unmet70))
 
 diagnostic%>%
   ggplot(aes(n_years_unmet90))+
@@ -302,7 +321,7 @@ read.csv("Outputs/Tier summaries/20260413_all_scenarios_through_cc95_tiers_categ
   unique()%>%
   ggplot(aes(tier, prop, fill = as.factor(tier)))+
   geom_col(position="dodge")+
-  labs(x= "Tier", y = "Proportion of Demand Units", fill = "Tier")+
+  labs(x= "Tier", y = "Proportion of Locations of Interest", fill = "Tier")+
   theme_bw()+
   theme(legend.position = "None")
 ```
