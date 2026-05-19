@@ -21,17 +21,18 @@ Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BY
 
 We want to clean up some text typos and filter out a few demand units that we decided to omit upon manual review
 ```{r}
-crosswalk = read_excel("Inputs/Master crosswalk SW DUs M&I.xlsx")%>%
-  rename(dwuc = 1, demand_id = 2, delivery_id = 3)%>%
-  mutate(dwuc = str_replace_all(dwuc, "[\n]+", ""),
+crosswalk = read_excel("Inputs/Master M&I demand unit and delivery arc crosswalk May 18 2026.xlsx")%>%
+  select(-Notes)%>%
+  rename(dwuc = 1, delivery_id = 2)%>%
+  mutate(dwuc = str_remove_all(dwuc, "\r\n$"),
          delivery_id = case_when(
            delivery_id == "D_POSC015_CSPSO" ~ "D_PSC015_CSPSO",
            delivery_id == "D_SVWRD_CSTLN_PMI" ~ "D_SVRWD_CSTLN_PMI",
            T ~ delivery_id))%>%
-  filter(!dwuc %in% c("WSPNT_NU", "PINES", "ELDID_NA1", "CCWDI", "13_NU2", "26S_NU3", "71_NU", "72_NU", "ESB415", "CLLPT", "60N_NU1"))
+  select(1, 2)
 ```
 
 Export
 ```{r}
-write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260413_crosswalk_processed.csv", row.names = F)
+write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260519_crosswalk_processed.csv", row.names = F)
 ```

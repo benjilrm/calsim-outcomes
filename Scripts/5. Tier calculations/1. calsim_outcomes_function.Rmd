@@ -18,16 +18,26 @@ knitr::opts_knit$set(root.dir = here())
 options(scipen = 999)
 ```
 
+Universal variables: thresholds for tier categorisation
+```{r setup, include=FALSE}
+tier1_reliability_threshold = 90
+tiers234_reliability_threshold = 50
+
+tier1_severity_threshold = 70
+tier2_severity_threshold = 50
+tiers34_severity_threshold = 20
+```
+
 # Crosswalk data
 
 These are the drinking water demand units in CalSim we want to focus on
 ```{r}
-crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260413_crosswalk_processed.csv")
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260519_crosswalk_processed.csv")
 ```
 
 # Demand data
 ```{r}
-static_demand = read.csv("Outputs/Static demand/20260413_static_demand_by_du_updated.csv")%>%
+static_demand = read.csv("Outputs/Static demand/20260519_static_demand_by_du_updated.csv")%>%
   rename(dwuc = traced_du, annual_demand = demand_du_taf)%>%
   filter(dwuc %in% crosswalk$dwuc)%>%
   crossing(year = 1921:2021)%>%
@@ -158,18 +168,26 @@ process_scenario = function(scenario_id, delivery_folder, crosswalk, output_base
     ungroup() %>%
     mutate(
       tier = case_when(
-        perc_years_met >= 90 & min_met > 70 ~ 1,
-        perc_years_met >= 50 & min_met > 50 ~ 2,
-        perc_years_met >= 50 & below_50 <= 20 ~ 3,
-        T ~ 4),
-      tier_decimal = tier + perc_years_90unmet) %>%
-    select(scenario_id, dwuc, tier, tier_decimal)%>%
-    group_by(tier)%>%
-    mutate(min = min(tier_decimal),
-         max = max(tier_decimal)) %>%
-    ungroup() %>%
-    mutate(tier_rescaled = ifelse(min == max, tier, tier + (tier_decimal - min) / (max - min) * 0.999),
-         tier = as.factor(tier))%>%
+        perc_years_90met >= tier1_frequency_threshold & min_met > tier1_reliability_threshold ~ 1,
+        perc_years_90met >= tiers234_frequency_threshold & min_met > tier2_reliability_threshold ~ 2,
+        perc_years_90met >= tiers234_frequency_threshold & below_50 <= tiers34_reliability_threshold ~ 3,
+        T ~ 4))%>%
+    group_by(tier) %>%
+    mutate(
+      reliability_rescale = case_when(
+        tier == 1 ~ (perc_years_90met - tier1_reliability_threshold) / (100 - tier1_reliability_threshold),
+        tier %in% c(2,3) ~ (perc_years_90met - tiers234_reliability_threshold) / (tier1_reliability_threshold - tiers234_reliability_threshold),
+        tier == 4 ~ perc_years_90met/tiers234_reliability_threshold),
+      severity_rescale = case_when(
+        tier == 1 ~ (min_met - tier1_severity_threshold) / (100 - tier1_severity_threshold),
+        tier == 2 ~ (min_met - tier2_severity_threshold) / (tier1_severity_threshold - tier2_severity_threshold),
+        tier == 3 ~ (tiers34_severity_threshold - below_50) / tiers34_severity_threshold,
+        tier == 4 ~ below_50 / (100-tiers34_severity_threshold)))%>%
+    ungroup()%>%
+    mutate(drop_risk = pmin(reliability_rescale, severity_rescale),
+           tier_decimal = tier + (1 - drop_risk)*0.99,
+           tier = as.factor(tier))%>%
+    select(scenario_id, dwuc, tier, tier_decimal)
   
   return(tiers)}
 ```
@@ -217,8 +235,8 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
   # Save tier outputs
   tier_dir = file.path(output_base, "Tier summaries")
   dir.create(tier_dir, showWarnings = F, recursive = T)
-  write.csv(tier_matrix_ordinal, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_ordinal.csv"), row.names = F)
-  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260413_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
+  write.csv(tier_matrix_ordinal, file.path(tier_dir, "20260519_all_scenarios_through_cc95_tiers_ordinal.csv"), row.names = F)
+  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260519_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
 ```
 
 # Run functions
@@ -244,47 +262,87 @@ mean_annual_deliveries <- list.files(path = folder, pattern = "\\.csv$", full.na
   group_by(scenario_id, dwuc)%>%
   reframe(mean_annual_delivery = mean(annual_delivery))
 
-write.csv(mean_annual_deliveries, "Outputs/20250515mean_annual_deliveries.csv", row.names = F)
+write.csv(mean_annual_deliveries, "Outputs/20250519_mean_annual_deliveries.csv", row.names = F)
 ```
 
 
-Diagnostic summary
+Explore new continuous tier framework
 ```{r}
-read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+new_tiers = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
   mutate(percent_demand_met = round(percent_demand_met),
       demand_met = ifelse(percent_demand_met >= 90, 1, 0)) %>%
   group_by(scenario_id, dwuc) %>%
   reframe(
       perc_years_90met = mean(demand_met, na.rm = T) * 100,
-      perc_years_90unmet = (100 - perc_years_90met)/100,
       min_met = min(percent_demand_met),
       below_50 = mean(percent_demand_met < 50)*100)%>%
   ungroup()%>% 
   mutate(
       tier = case_when(
-        perc_years_90met >= 90 & min_met > 70 ~ 1,
-        perc_years_90met >= 50 & min_met > 50 ~ 2,
-        perc_years_90met >= 50 & below_50 <= 20 ~ 3,
-        T ~ 4),
-      tier_decimal = tier + perc_years_90unmet)%>%
-  group_by(tier)%>%
-  mutate(min = min(tier_decimal),
-         max = max(tier_decimal)) %>%
-  ungroup() %>%
-  mutate(tier_rescaled = ifelse(min == max, tier, tier + (tier_decimal - min) / (max - min) * 0.999),
+        perc_years_90met >= tier1_reliability_threshold & min_met > tier1_severity_threshold ~ 1,
+        perc_years_90met >= tiers234_reliability_threshold & min_met > tier2_severity_threshold ~ 2,
+        perc_years_90met >= tiers234_reliability_threshold & below_50 <= tiers34_severity_threshold ~ 3,
+        T ~ 4))%>%
+  group_by(tier) %>%
+  mutate(
+    reliability_rescale = case_when(
+      tier == 1 ~ (perc_years_90met - tier1_reliability_threshold) / (100 - tier1_reliability_threshold),
+      tier %in% c(2,3) ~ (perc_years_90met - tiers234_reliability_threshold) / (tier1_reliability_threshold - tiers234_reliability_threshold),
+      tier == 4 ~ perc_years_90met/tiers234_reliability_threshold),
+    severity_rescale = case_when(
+      tier == 1 ~ (min_met - tier1_severity_threshold) / (100 - tier1_severity_threshold),
+      tier == 2 ~ (min_met - tier2_severity_threshold) / (tier1_severity_threshold - tier2_severity_threshold),
+      tier == 3 ~ (tiers34_severity_threshold - below_50) / tiers34_severity_threshold,
+      tier == 4 ~ below_50 / (100-tiers34_severity_threshold)))%>%
+  ungroup()%>%
+  mutate(drop_risk = pmin(reliability_rescale, severity_rescale),
+         tier_decimal = tier + (1 - drop_risk)*0.99,
          tier = as.factor(tier))%>%
-  ggplot(aes(x = perc_years_90met, y = tier_rescaled, group = tier, colour = tier))+
+  arrange(tier_decimal)
+
+#new_tiers
+
+ggplot(new_tiers, aes(x = tier_decimal, fill = tier))+
+    geom_histogram(colour = "black")+
+    theme_bw()+
+    labs(x = "Continuous Tier Value", y = "# of Locations", fill = "Ordinal Tier Value")+
+    scale_x_continuous(limits = c(0.9, 4.99))
+  
+ggplot(new_tiers, aes(x = 1 - drop_risk, y = tier_decimal, group = tier, colour = tier))+
   geom_count()+
     scale_size_continuous(
     breaks = c(1, 5, 10, 20, 40),
-    labels = c("1", "5+", "10+", "20+", "40+"),  # Explicit: 50+ means "50 or more"
+    labels = c("1", "5+", "10+", "20+", "40+"),  
     name = "Number of locations")+
     geom_line()+
     theme_bw()+
     scale_y_reverse()+
-    labs(x = "Number of Years with >90% Demand Met", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
+    labs(x = "Drop Risk", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
     scale_x_continuous(position = "top")
-  theme(legend.position = "bottom")
+  
+ggplot(new_tiers, aes(x = perc_years_90met, y = tier_decimal, group = tier, colour = tier))+
+  geom_count()+
+    scale_size_continuous(
+    breaks = c(1, 5, 10, 20, 40),
+    labels = c("1", "5+", "10+", "20+", "40+"),  
+    name = "Number of locations")+
+    geom_line()+
+    theme_bw()+
+    scale_y_reverse()+
+    labs(x = "% of Years with Demand Met", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
+    scale_x_continuous(position = "top")
+
+ggplot(new_tiers, aes(x = 1- severity_rescale, y = tier_decimal, group = tier, colour = tier))+
+  geom_count()+
+    scale_size_continuous(
+      breaks = c(1, 5, 10, 20, 40),
+      labels = c("1", "5+", "10+", "20+", "40+"),  
+      name = "Number of locations")+
+    geom_line()+
+    theme_bw()+
+    scale_y_reverse()+
+    labs(x = "Risk of Dropping Down a Tier Due to Shortfall Year(s) \n (Higher Values = Closer to Dropping Down a Tier)", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
+    scale_x_continuous(position = "top", limits = c(-0.5, 1))
 ```
 
 
@@ -309,7 +367,7 @@ diagnostic%>%
 
 Plot for baseline
 ```{r}
-read.csv("Outputs/Tier summaries/20260413_all_scenarios_through_cc95_tiers_categorical.csv")%>%
+read.csv("Outputs/Tier summaries/20260519_all_scenarios_through_cc95_tiers_categorical.csv")%>%
   filter(scenario_id == "s0020")%>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
