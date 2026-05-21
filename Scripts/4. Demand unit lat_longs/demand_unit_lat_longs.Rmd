@@ -195,7 +195,12 @@ tm_shape(ca_boundary)+
 ```
 Map of systems for methodology doc
 ```{r}
-systems_sf = st_read("C:/Users/benji/Desktop/COEQWAL/ca-surface-water-sources/Data/Outputs/Shapefiles for dashboard/20260515_systems.shp")
+systems_sf = st_read("C:/Users/benji/Desktop/COEQWAL/ca-surface-water-sources/Data/Outputs/Shapefiles for dashboard/20260515_systems.shp")%>%
+  filter(pwsid %in% c(full_master_key%>%filter(sw_du == 1)%>%pull(pwsid)))
+
+full_master_key
+
+full_master_key%>%filter(sw_du == 1)%>%pull(pwsid)
 
 tm_shape(ca_boundary)+
   tm_lines()+
@@ -204,5 +209,19 @@ tm_shape(ca_boundary)+
   tm_compass(type = "8star", size = 3, position = c("left", "bottom"))+
   tm_scalebar(breaks = c(0, 50, 100, 150), text.size = 2, position = c("left", "bottom"))
 ```
+
+```{r}
+shortages_sf = read.csv("Inputs/M&I shortage latlongs/Master list of M&I supply shortages locations of interest.xlsx - Sheet1.csv")%>%
+  filter(!is.na(lat_4326))%>%
+  st_as_sf(., coords = c("lon_4326", "lat_4326"), crs = 4326)
+
+tm_shape(ca_boundary)+
+  tm_lines()+
+  tm_shape(shortages_sf)+
+  tm_dots(fill = "#7A0505")+
+  tm_compass(type = "8star", size = 3, position = c("left", "bottom"))+
+  tm_scalebar(breaks = c(0, 50, 100, 150), text.size = 2, position = c("left", "bottom"))
+```
+
 
 
