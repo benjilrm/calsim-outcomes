@@ -19,7 +19,7 @@ options(scipen = 999)
 ```
 
 Universal variables: thresholds for tier categorisation
-```{r setup, include=FALSE}
+```{r}
 tier1_reliability_threshold = 90
 tiers234_reliability_threshold = 50
 
@@ -32,7 +32,8 @@ tiers34_severity_threshold = 20
 
 These are the drinking water demand units in CalSim we want to focus on
 ```{r}
-crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260519_crosswalk_processed.csv")
+crosswalk = read.csv("Outputs/Crosswalk demand and delivery IDs/20260521_crosswalk_processed.csv")%>%
+  mutate(delivery_id = ifelse(delivery_id == "D_ESB420_GRGNO_ALL", "D_ESB420_GRGNO_PMI", delivery_id))
 ```
 
 # Demand data
@@ -51,7 +52,7 @@ static_demand = read.csv("Outputs/Static demand/20260519_static_demand_by_du_upd
 
 # Delivery data
 
-Demand and delivery data downloaded from the respective Google Drive folder linked to each scenario in [this spreadsheet](https://docs.google.com/spreadsheets/d/1iXqEc4sMVC8gKqPzhf_VOS32EXKzocAP2pNJ5PZlFbY/edit?gid=0#gid=0). Once in a scenario's folder, click on 'Data Extraction', then 'Demands_Deliveries'. We want to download csvs of monthly values for both demand and deliveries.
+Demand and delivery data downloaded from the respective Google Drive folder linked to each scenario in [this spreadsheet](https://docs.google.com/spreadsheets/d/1WuVaWxkJhZWOm6I-pVEBlUxZomNi-sJa/edit?gid=1212894133#gid=1212894133). Once in a scenario's folder, click on 'Data Extraction', then 'Demands_Deliveries'. We want to download csvs of monthly values for both demand and deliveries.
 
 Function to extract scenario ID from filename
 ```{r}
@@ -103,7 +104,7 @@ process_deliveries = function(file_path, crosswalk) {
       values_to = "delivery_taf")%>%
     left_join(dates, by = "date_id")%>%
     mutate(scenario_id = scenario_id,
-           delivery_taf = as.numeric(ifelse(delivery_taf == "", NA, delivery_taf)),
+           delivery_taf = as.numeric(ifelse(delivery_taf == "", 0, delivery_taf)),
            year = year(date))%>%
     select(scenario_id, delivery_id, date, year, delivery_taf) %>%
     left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")
@@ -168,9 +169,9 @@ process_scenario = function(scenario_id, delivery_folder, crosswalk, output_base
     ungroup() %>%
     mutate(
       tier = case_when(
-        perc_years_90met >= tier1_frequency_threshold & min_met > tier1_reliability_threshold ~ 1,
-        perc_years_90met >= tiers234_frequency_threshold & min_met > tier2_reliability_threshold ~ 2,
-        perc_years_90met >= tiers234_frequency_threshold & below_50 <= tiers34_reliability_threshold ~ 3,
+        perc_years_90met >= tier1_reliability_threshold & min_met > tier1_severity_threshold ~ 1,
+        perc_years_90met >= tiers234_reliability_threshold & min_met > tier2_severity_threshold ~ 2,
+        perc_years_90met >= tiers234_reliability_threshold & below_50 <= tiers34_severity_threshold ~ 3,
         T ~ 4))%>%
     group_by(tier) %>%
     mutate(
@@ -235,8 +236,8 @@ process_all_scenarios = function(delivery_folder, crosswalk, output_base = "Outp
   # Save tier outputs
   tier_dir = file.path(output_base, "Tier summaries")
   dir.create(tier_dir, showWarnings = F, recursive = T)
-  write.csv(tier_matrix_ordinal, file.path(tier_dir, "20260519_all_scenarios_through_cc95_tiers_ordinal.csv"), row.names = F)
-  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260519_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
+  write.csv(tier_matrix_ordinal, file.path(tier_dir, "20260521_all_scenarios_through_cc95_tiers_ordinal.csv"), row.names = F)
+  write.csv(tier_matrix_continuous, file.path(tier_dir, "20260521_all_scenarios_through_cc95_tiers_continuous.csv"), row.names = F)}
 ```
 
 # Run functions
@@ -249,6 +250,15 @@ results = process_all_scenarios(
   crosswalk = crosswalk,
   output_base = "Outputs")
 ```
+```{r}
+read.csv("Outputs/Tier summaries/20260521_all_scenarios_through_cc95_tiers_ordinal.csv")
+
+read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+  filter(dwuc %in% c("ESB420"))%>%
+  arrange(dwuc)
+```
+
+
 
 # Mean annual delivery output
 
@@ -300,7 +310,7 @@ new_tiers = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>
          tier = as.factor(tier))%>%
   arrange(tier_decimal)
 
-#new_tiers
+new_tiers
 
 ggplot(new_tiers, aes(x = tier_decimal, fill = tier))+
     geom_histogram(colour = "black")+
@@ -346,28 +356,9 @@ ggplot(new_tiers, aes(x = 1- severity_rescale, y = tier_decimal, group = tier, c
 ```
 
 
-```{r}
-diagnostic = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
-  mutate(unmet90 = ifelse(percent_demand_met < 90, 1, 0),
-         unmet70 = ifelse(percent_demand_met < 70, 1, 0))%>%
-  group_by(scenario_id, dwuc)%>%
-  reframe(n_years_unmet90 = sum(unmet90),
-          n_years_unmet70 = sum(unmet70))
-
-diagnostic%>%
-  ggplot(aes(n_years_unmet90))+
-  geom_histogram(fill = "coral2", colour = "black")+
-  theme_bw(15)+
-  labs(y = "# of demand units", x = "# of years with <90% of demand met")
-  
-#write.csv(diagnostic, "Outputs/20260506_tier_threshold_diagnostic.csv")
-```
-
-
-
 Plot for baseline
 ```{r}
-read.csv("Outputs/Tier summaries/20260519_all_scenarios_through_cc95_tiers_categorical.csv")%>%
+read.csv("Outputs/Tier summaries/20260521_all_scenarios_through_cc95_tiers_ordinal.csv")%>%
   filter(scenario_id == "s0020")%>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
@@ -384,15 +375,51 @@ read.csv("Outputs/Tier summaries/20260519_all_scenarios_through_cc95_tiers_categ
   theme(legend.position = "None")
 ```
 
-Check to make sure nothing looks off (using baseline as example)
-```{r}
-read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
-  arrange(dwuc)%>%
-  filter(dwuc == "SBA029")%>%
-  mutate(met = ifelse(percent_demand_met >= 90, 1, 0),
-         below50 = ifelse(percent_demand_met < 50, 1, 0))%>%
-  reframe(n_years_demand_met = sum(met), percent_years_demand_met = mean(met)*100,
-          percent_years_below50 = mean(below50), n_years_below50 = sum(below50))
-```
 
+
+
+
+```{r}
+# Read and clean the data
+  data = read.csv("Inputs/Deliveries/s0020_DCRadjBL_2020LU_wTUCP_DELIVERIES.csv") %>%
+    mutate(row_id = row_number())%>%
+    pivot_longer(cols = -row_id,
+                 names_to = "col_position",
+                 values_to = "value")%>%
+    pivot_wider(
+      names_from = row_id,
+      values_from = value)%>%
+    rename(
+      col_position = 1,
+      delivery_id = 2,    
+      units = 7)
+  
+  dates = data%>%
+    slice(1) %>%  
+    select(8:ncol(.)) %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "date_id",
+      values_to = "date")
+  
+  processed = data%>%
+    filter(units == "TAF")%>%
+           #& delivery_id %in% crosswalk$delivery_id)%>%
+    select(-c(1,3:units))%>%
+    pivot_longer(
+      cols = -delivery_id,
+      names_to = "date_id",
+      values_to = "delivery_taf")%>%
+    left_join(dates, by = "date_id")%>%
+    mutate(scenario_id = "s0020",
+           delivery_taf = as.numeric(ifelse(delivery_taf == "", NA, delivery_taf)),
+           year = year(date))%>%
+    select(scenario_id, delivery_id, date, year, delivery_taf) 
+    left_join(crosswalk%>%select(dwuc, delivery_id), by = "delivery_id")
+    
+    processed%>%
+      filter(grepl("ESB420", delivery_id))%>%
+      select(scenario_id, delivery_id)%>%
+      unique()
+```
 
