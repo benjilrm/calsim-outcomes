@@ -235,10 +235,14 @@ master_systems_shortage = read_excel("Inputs/M&I shortage latlongs/Master list o
          system_lon = ifelse(!is.na(system_lon), system_lon, lat_sabl))%>%
   select(-c(pop_served_sdwis, lon_sabl, lat_sabl))
 
+master_systems_shortage_sf = master_systems_shortage%>%
+  filter(!is.na(system_lat))%>%
+  st_as_sf(., coords = c("system_lon", "system_lat"), crs = 4326)
+
 tm_shape(ca_boundary)+
   tm_lines()+
-  tm_shape(master_systems_shortage)+
-  tm_dots(fill = "#C358DB")+
+  tm_shape(master_systems_shortage_sf)+
+  tm_dots(fill = "#9949AB")+
   tm_compass(type = "8star", size = 3, position = c("left", "bottom"))+
   tm_scalebar(breaks = c(0, 50, 100, 150), text.size = 2, position = c("left", "bottom"))
 ```
