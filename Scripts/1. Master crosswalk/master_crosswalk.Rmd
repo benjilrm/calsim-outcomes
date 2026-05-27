@@ -21,15 +21,17 @@ Provided by Kristin via [this folder](https://drive.google.com/drive/folders/1BY
 
 We want to clean up some text typos and filter out a few demand units that we decided to omit upon manual review
 ```{r}
-crosswalk = read.csv("Inputs/Master M&I demand unit and delivery arc crosswalk May 18 2026.xlsx - Sheet1.csv",
+crosswalk = read.csv("Inputs/Master M&I demand unit and delivery arc crosswalk May 18 2026.xlsx - All delivery arcs.csv",
                      na.strings = "")%>%
-  rename(dwuc = 1, delivery_id_1 = 2, delivery_agg = 8)%>%
-  mutate(dwuc = trimws(dwuc, "right"),
-         delivery_id = ifelse(!is.na(delivery_agg), delivery_agg, delivery_id_1))%>%
-  select(dwuc, delivery_id)
+  rename(dwuc = 1, delivery_id_1 = 2)%>%
+  select(-Notes)%>%
+  mutate(dwuc = trimws(dwuc, "right"))%>%
+  pivot_longer(!dwuc, names_to = "type", values_to = "delivery_id")%>%
+  filter(!is.na(delivery_id))%>%
+  select(-type)
 ```
 
 Export
 ```{r}
-write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260526_crosswalk_processed.csv", row.names = F)
+write.csv(crosswalk, "Outputs/Crosswalk demand and delivery IDs/20260527_crosswalk_processed.csv", row.names = F)
 ```
