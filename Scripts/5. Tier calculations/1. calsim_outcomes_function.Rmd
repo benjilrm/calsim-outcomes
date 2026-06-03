@@ -253,18 +253,10 @@ results = process_all_scenarios(
 ```
 
 ```{r}
-tiers = read.csv("Outputs/Tier summaries/20260603_all_scenarios_through_ecearth_tiers_ordinal.csv")
+read.csv("Outputs/Tier summaries/20260603_all_scenarios_through_ecearth_tiers_ordinal.csv")
 
-delivery_files = list.files("Inputs/Deliveries", pattern = "\\.csv$")
-sub("^(s[0-9]+)_.*", "\\1", delivery_files)%>%
-  data.frame()%>%
-  rename(scenario_id = 1)%>%
-  filter(!scenario_id %in% tiers$scenario_id)
-                                    
-  
 read.csv("Outputs/Annual demand met/s0147_demand_met_by_year.csv")%>%
   filter(dwuc == "CSB038")
-  
 ```
 
 
