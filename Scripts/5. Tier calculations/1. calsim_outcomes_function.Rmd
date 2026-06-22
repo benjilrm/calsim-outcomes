@@ -273,7 +273,7 @@ mean_annual_deliveries <- list.files(path = folder, pattern = "\\.csv$", full.na
   group_by(scenario_id, dwuc)%>%
   reframe(mean_annual_delivery = mean(annual_delivery))
 
-write.csv(mean_annual_deliveries, "Outputs/20260603_mean_annual_deliveries.csv", row.names = F)
+write.csv(mean_annual_deliveries, "Outputs/20260604_mean_annual_deliveries.csv", row.names = F)
 ```
 
 
@@ -359,7 +359,7 @@ ggplot(new_tiers, aes(x = 1- severity_rescale, y = tier_decimal, group = tier, c
 
 Plot for baseline
 ```{r}
-read.csv("Outputs/Tier summaries/20260527_all_scenarios_through_cc95_tiers_ordinal.csv")%>%
+read.csv("Outputs/Tier summaries/20260603_all_scenarios_through_ecearth_tiers_ordinal.csv")%>%
   filter(scenario_id == "s0011")%>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
@@ -377,6 +377,34 @@ read.csv("Outputs/Tier summaries/20260527_all_scenarios_through_cc95_tiers_ordin
 ```
 
 
+```{r}
+histogram_data = read.csv("Outputs/Annual demand met/s0020_demand_met_by_year.csv")%>%
+    group_by(scenario_id, dwuc) %>%
+    reframe(
+      demand_met = mean(percent_demand_met >= 90)*100,
+      below70 = mean(percent_demand_met < 70)*100,
+      below50 = mean(percent_demand_met < 50)*100)
+
+ggplot(histogram_data, aes(demand_met))+
+  geom_histogram(fill = "coral2", colour = "black")+
+  theme_bw()+
+  labs(x = "# of Years with >90% Demand Met", y = "# of Locations of Interest")+
+  geom_vline(xintercept = 90, linetype = "dashed")+
+  geom_vline(xintercept = 50, linetype = "dashed")
+
+ggplot(histogram_data, aes(below70))+
+  geom_histogram(fill = "skyblue3", colour = "black")+
+  theme_bw()+
+  labs(x = "# of Years with <70% Demand Met", y = "# of Locations of Interest")+
+  geom_vline(xintercept = 1, linetype = "dashed")
+
+ggplot(histogram_data, aes(below50))+
+  geom_histogram(fill = "#C472CF", colour = "black")+
+  theme_bw()+
+  labs(x = "# of Years with <50% Demand Met", y = "# of Locations of Interest")+
+  geom_vline(xintercept = 0.9, linetype = "dashed")+
+  geom_vline(xintercept = 20, linetype = "dashed")
+```
 
 
 
