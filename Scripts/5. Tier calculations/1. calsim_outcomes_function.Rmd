@@ -316,7 +316,7 @@ new_tiers
 ggplot(new_tiers, aes(x = tier_decimal, fill = tier))+
     geom_histogram(colour = "black")+
     theme_bw()+
-    labs(x = "Continuous Tier Value", y = "# of Locations", fill = "Ordinal Tier Value")+
+    labs(x = "Continuous Outcome Level", y = "Count of Locations of Interest", fill = "Discrete Outcome Level")+
     scale_x_continuous(limits = c(0.9, 4.99))
   
 ggplot(new_tiers, aes(x = 1 - drop_risk, y = tier_decimal, group = tier, colour = tier))+
@@ -352,26 +352,29 @@ ggplot(new_tiers, aes(x = 1- severity_rescale, y = tier_decimal, group = tier, c
     geom_line()+
     theme_bw()+
     scale_y_reverse()+
-    labs(x = "Risk of Dropping Down a Tier Due to Shortfall Year(s) \n (Higher Values = Closer to Dropping Down a Tier)", y = "Continuous Tier Value", colour = "Ordinal Tier", size = "# of Locations of Interest")+
+    labs(x = "Risk of Dropping Down an Outcome Level Due to Shortfall Year(s) \n (Higher Values = Closer to Dropping Down)", y = "Continuous Outcome Level", colour = "Discrete Outcome Level", size = "# of Locations of Interest")+
     scale_x_continuous(position = "top", limits = c(-0.5, 1))
+
+new_tiers%>%
+  filter(severity_rescale > 1)
 ```
 
 
 Plot for baseline
 ```{r}
 read.csv("Outputs/Tier summaries/20260603_all_scenarios_through_ecearth_tiers_ordinal.csv")%>%
-  filter(scenario_id == "s0011")%>%
+  filter(scenario_id == "s0020")%>%
   pivot_longer(-scenario_id, names_to = "du", values_to = "tier")%>%
   filter(!is.na(tier))%>%
   group_by(scenario_id)%>%
   mutate(total_n = n())%>%
   ungroup()%>%
   group_by(scenario_id, tier)%>%
-  reframe(prop = n()/total_n)%>%
+  reframe(n = n())%>%
   unique()%>%
-  ggplot(aes(tier, prop, fill = as.factor(tier)))+
+  ggplot(aes(tier, n, fill = as.factor(tier)))+
   geom_col(position="dodge")+
-  labs(x= "Tier", y = "Proportion of Locations of Interest", fill = "Tier")+
+  labs(x= "Outcome Level", y = "Count of Locations of Interest", fill = "Tier")+
   theme_bw()+
   theme(legend.position = "None")
 ```
